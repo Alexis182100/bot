@@ -1,0 +1,100 @@
+===============================================
+ACTUALIZACIÓN DE COMANDOS - GUÍA RÁPIDA
+===============================================
+
+📋 CAMBIOS REALIZADOS:
+
+1️⃣  SISTEMA DE COMANDOS DE MENÚ MEJORADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Ahora tienes 50+ comandos del menú que pueden ser configurados individualmente:
+
+✅ Comandos disponibles:
+.diamantes, .canva, .actas, .combos2, .reportes, .youtube, .rfc, 
+.documentos, .penales, .pasaporte, .licencias, .imss, .recetas, 
+.pape, .requisitos, .combo1, .aviso, .comandos, .sat, .refacturas,
+.carta, .buro, .pruebas, .infonavit, .nss, .certificados, .extras,
+.lotes, .stock2, .stock3, .stock5, .combos, .crunchyroll, .disney,
+.max, .primevideo, .vix, .paramount, .netflix, .prime, .pago2,
+.spotify, .apple, .reglas, .servicios, y muchos más...
+
+2️⃣  CÓMO CONFIGURAR UN COMANDO DE MENÚ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Usa el comando .set<nombre> para configurar cualquier comando del menú:
+
+Ejemplo 1 - Solo texto:
+.setdiamantes Diamantes $50.00 - Acceso VIP a la tienda
+
+Ejemplo 2 - Con imagen:
+Responde una imagen con:
+.setdiamantes Diamantes $50.00 - Acceso VIP a la tienda
+
+O envía una imagen y escribe:
+.setdiamantes Diamantes $50.00
+Y luego responde la imagen con:
+.setdiamantes
+
+3️⃣  DIFERENCIA ENTRE .create Y .set
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+❌ ANTIGUO (No usar):
+.create micomando → Creaba comandos que se ejecutaban como .s
+
+✅ NUEVO (Usar):
+Los comandos del menú ya están predefinidos. Solo configúralos con .set:
+.setdiamantes contenido
+.setcanva contenido
+.setactas contenido
+
+Si necesitas crear UN COMANDO PERSONALIZADO (no está en el menú):
+.create nombredelcomando → Crea el comando personalizado
+.setnombredelcomando contenido → Configura su contenido
+
+4️⃣  EJEMPLO DE USO COMPLETO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Paso 1: Administrador configura los comandos
+.setdiamantes 💎 Paquete de Diamantes - $50.00
+.setcanva 🎨 Canva Premium - $15.00
+.setactas 📄 Documentos Oficiales - $25.00
+
+Paso 2: Usuarios usan los comandos
+.diamantes
+.canva
+.actas
+
+Resultado: Se muestra el contenido configurado
+
+5️⃣  COMANDOS ESPECIALES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 COMANDOS PERSONALIZADOS (si necesitas más allá del menú):
+.create nombredelcomando        → Crear comando personalizado
+.setnombredelcomando contenido  → Configurar su contenido
+.nombredelcomando              → Ejecutar el comando
+
+📦 SISTEMA DE STOCK:
+.setstock información           → Guardar información de stock
+.stock                         → Ver todo el stock
+.stock [nombre]                → Ver un stock específico
+
+💳 SISTEMA DE PAGO:
+.setpago información           → Guardar información de pago
+.pago                          → Ver información de pago
+
+6️⃣  NOTAS IMPORTANTES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Solo administradores pueden configurar comandos
+✅ Todos pueden ejecutar los comandos
+✅ Puedes añadir imágenes a cualquier comando
+✅ Los datos se guardan automáticamente en menucommands.json
+
+7️⃣  ARCHIVOS ACTUALIZADOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- index.js → Sistema mejorado con soporte de menucommands
+- menucommands.json → Base de datos de comandos del menú (se crea automáticamente)
+
+===============================================
+¡Tu bot está completamente actualizado! 🎉
+===============================================

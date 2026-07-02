@@ -1,0 +1,89 @@
+═══════════════════════════════════════════════════════════════════
+                    REFERENCIA RÁPIDA DEL BOT v2.0
+                        Actualización Completada
+═══════════════════════════════════════════════════════════════════
+
+✅ LO QUE SE ARREGLÓ:
+─────────────────────────────────────────────────────────────────
+1. Comando .create → Ahora funciona correctamente (NO es .s)
+2. Comandos del menú → Todos los 50+ funcionan independientemente  
+3. Sistema de configuración → .set<comando> para cada uno
+4. Soporte de imágenes → En todos los comandos del menú
+
+───────────────────────────────────────────────────────────────────
+
+PRIMEROS PASOS - ADMINISTRADOR:
+───────────────────────────────────────────────────────────────────
+
+1. Inicia el bot:
+   npm start
+
+2. Actívalo en tu grupo:
+   .activarbot
+
+3. Configura un comando (ejemplo con diamantes):
+   .setdiamantes 💎 Diamantes VIP - $50.00 acceso inmediato
+
+4. Para agregar imagen:
+   - Responde una imagen con: .setdiamantes Contenido aquí
+
+───────────────────────────────────────────────────────────────────
+
+COMANDOS MÁS USADOS:
+───────────────────────────────────────────────────────────────────
+
+Administración:
+  .activarbot          Activa el bot en tu grupo
+  .desactivarbot       Desactiva el bot
+  .setstock info       Configura stock
+  .setpago info        Configura método de pago
+
+Usuarios:
+  .diamantes           Ver diamantes
+  .netflix             Ver netflix
+  .spotify             Ver spotify
+  .pago                Ver método de pago
+  .stock               Ver stocks disponibles
+
+───────────────────────────────────────────────────────────────────
+
+TODOS LOS COMANDOS DE MENÚ (50+):
+───────────────────────────────────────────────────────────────────
+
+.diamantes      .canva        .actas         .combos2
+.reportes       .youtube      .rfc           .documentos
+.penales        .pasaporte    .licencias     .imss
+.recetas        .pape         .requisitos    .combo1
+.aviso          .comandos     .sat           .refacturas
+.carta          .buro         .pruebas       .infonavit
+.nss            .certificados .extras        .lotes
+.stock2         .stock3       .stock5        .combos
+.crunchyroll    .disney       .max           .primevideo
+.vix            .paramount    .netflix       .prime
+.pago2          .spotify      .apple         .reglas
+.servicios      + 30 más...
+
+───────────────────────────────────────────────────────────────────
+
+TIPS IMPORTANTES:
+───────────────────────────────────────────────────────────────────
+
+✅ Solo administradores pueden usar .set<comando>
+✅ Los datos se guardan automáticamente
+✅ Puedes actualizar un comando tantas veces quieras
+✅ Las imágenes se guardan en base64
+✅ Sin límite de comandos personalizados
+
+───────────────────────────────────────────────────────────────────
+
+SOPORTE Y DOCUMENTACIÓN:
+───────────────────────────────────────────────────────────────────
+
+GUIA_COMANDOS.txt          → Guía de uso rápido
+RESUMEN_CAMBIOS_v2.0.txt   → Resumen técnico de cambios
+COMANDOS_FUNCIONALES.txt   → Listado de 65+ comandos
+ACTUALIZACIONES.txt        → Historial de cambios
+
+═══════════════════════════════════════════════════════════════════
+         Bot WhatsApp v2.0 - Todos los comandos funcionales
+═══════════════════════════════════════════════════════════════════

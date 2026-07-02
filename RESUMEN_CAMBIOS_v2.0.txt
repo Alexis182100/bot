@@ -1,0 +1,178 @@
+╔═══════════════════════════════════════════════════════════════╗
+║                  RESUMEN DE CAMBIOS - BOT v2.0                ║
+║                 Sistema de Comandos de Menú Mejorado          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ PROBLEMAS SOLUCIONADOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. ❌ ANTES: El comando .create funcionaba como .s (creador de stickers)
+   ✅ AHORA: El comando .create funciona correctamente para comandos personalizados
+
+2. ❌ ANTES: Los comandos del menú solo mostraban un mensaje genérico
+   ✅ AHORA: Cada comando del menú puede ser configurado individualmente
+
+3. ❌ ANTES: No había forma de personalizar los 50+ comandos del menú
+   ✅ AHORA: Usa .set<comando> para configurar cada uno
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔧 ARCHIVOS MODIFICADOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📝 index.js (Principal)
+   • Agregado: Carga de menucommands.json
+   • Agregado: Sistema de configuración de comandos de menú (.set<comando>)
+   • Agregado: Verificación de comandos de menú antes de comandos legados
+   • Mejorado: Lógica de ejecución de comandos personalizados
+
+📄 menucommands.json (Nuevo)
+   • Base de datos para almacenar configuración de comandos de menú
+   • Se crea automáticamente al iniciar el bot
+   • Formato: { "comando": { "text": "contenido", "image": "base64", "mimetype": "..." } }
+
+📋 GUIA_COMANDOS.txt (Nuevo)
+   • Guía rápida de uso para los administradores
+   • Ejemplos de cómo configurar comandos
+   • Diferencias entre .create y comandos de menú
+
+📜 ACTUALIZACIONES.txt (Actualizado)
+   • Incluye los cambios de esta versión
+   • Mantiene historial de versiones anteriores
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 COMANDOS DEL MENÚ DISPONIBLES (50+)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Documentos y Trámites:
+  .actas, .rfc, .documentos, .penales, .pasaporte, .licencias,
+  .imss, .recetas, .pape, .requisitos, .sat, .refacturas,
+  .carta, .buro, .pruebas, .infonavit, .nss, .certificados
+
+Productos Digitales:
+  .diamantes, .canva, .youtube, .crunchyroll, .disney, .max,
+  .primevideo, .vix, .paramount, .netflix, .prime, .spotify,
+  .apple
+
+Stocks y Pagos:
+  .stock2, .stock3, .stock4, .stock5, .stock6, .stock7,
+  .stock8, .stock9, .stock10, .pago, .pago2
+
+Combos y Paquetes:
+  .combo, .combo1, .combos, .combos2, .combos3, .combos4,
+  .combos5, .paquete, .paquete2, .paquete3, .paquete4, .paquete5
+
+Otros:
+  .aviso, .comandos, .reglas, .servicios, .extras, .lotes,
+  .reportes, .ado, .adicionales, .alimentos, .autobus, .boletos,
+  .citas, .codigos, .constancias, .descuentos, .dinamica, .facturas,
+  .fichareportes, .fragmentos, .gamepass, .hbo, .justificantes,
+  .linkreportes, .linkcodigos, .libros, .lote, .metodo, .metodos,
+  .maxeo, .numerovirtual, .pasesff, .pedrial, .peliculas, .promo,
+  .procesos, .programas, .promoday, .preciosbot, .rebote, .recargas,
+  .reembolsos, .robux, .seguros, .shein, .tanda, .tramites,
+  .universidad, .vigencia, .vuelos, .universal
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📖 GUÍA RÁPIDA DE USO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1️⃣  CONFIGURAR UN COMANDO DE MENÚ (Solo Admin):
+
+   Opción A - Texto únicamente:
+   .setdiamantes 💎 Paquete de Diamantes - $50.00
+
+   Opción B - Texto con imagen:
+   (Responde a una imagen o envía una imagen y luego)
+   .setdiamantes 💎 Paquete de Diamantes - $50.00
+
+2️⃣  USAR EL COMANDO (Cualquier usuario):
+
+   .diamantes
+   
+   Resultado: Se muestra el texto y/o imagen configurados
+
+3️⃣  VER LO QUE ESTÁ CONFIGURADO:
+
+   Usa el comando normalmente y verás el contenido actual
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🆚 DIFERENCIAS IMPORTANTES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+COMANDOS DE MENÚ (Predefinidos):
+  ✅ Ya existen en el menú (.menu)
+  ✅ Se configuran con .set<nombre>
+  ✅ Ejemplo: .setdiamantes, .setcanva, .setactas
+
+COMANDOS PERSONALIZADOS (Nuevos):
+  ✅ Se crean con .create <nombre>
+  ✅ Se configuran con .set<nombre>
+  ✅ NO aparecen en el menú automáticamente
+  ✅ Ejemplo: .create miquotizador → .setmiquotizador contenido
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔒 PERMISOS Y RESTRICCIONES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Administradores pueden:
+   • Configurar comandos del menú
+   • Crear comandos personalizados
+   • Editar contenido existente
+   • Agregar/cambiar imágenes
+
+✅ Todos pueden:
+   • Ejecutar los comandos configurados
+   • Ver el contenido de los comandos
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ EJEMPLOS PRÁCTICOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EJEMPLO 1: Configurar comando de diamantes
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Admin dice: .setdiamantes 💎 Diamantes $50.00 - Acceso VIP
+2. Usuarios dicen: .diamantes
+3. Resultado: Bot muestra "💎 Diamantes $50.00 - Acceso VIP"
+
+EJEMPLO 2: Configurar con imagen
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Admin envía una imagen
+2. Admin responde la imagen con: .setcanva Canva Premium $15.00
+3. Usuarios dicen: .canva
+4. Resultado: Bot envía la imagen + "Canva Premium $15.00"
+
+EJEMPLO 3: Crear comando personalizado
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Admin dice: .create miquotizador
+2. Respuesta: "Comando .miquotizador Creado. Ahora usa .setmiquotizador"
+3. Admin dice: .setmiquotizador Servicios de cotización - $100
+4. Usuarios dicen: .miquotizador
+5. Resultado: Bot muestra "Servicios de cotización - $100"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚙️  INFORMACIÓN TÉCNICA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Validación de Sintaxis: ✅ CORRECTA
+Compatibilidad: ✅ Mantiene todos los comandos anteriores
+Base de Datos: 📄 menucommands.json (JSON)
+Archivos Requeridos: 
+  • index.js ✅
+  • menucommands.json ✅ (se crea automáticamente)
+  • Todas las dependencias instaladas ✅
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📞 NOTAS IMPORTANTES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• Los datos se guardan automáticamente en JSON
+• Las imágenes se almacenan en formato base64
+• Puedes tener múltiples imágenes (una por comando)
+• Los datos persisten entre reinicios del bot
+• No hay límite de comandos personalizados
+
+╔═══════════════════════════════════════════════════════════════╗
+║           ¡Bot completamente funcional y actualizado!         ║
+║                      Versión 2.0 - 2026                       ║
+╚═══════════════════════════════════════════════════════════════╝

@@ -1,0 +1,186 @@
+═══════════════════════════════════════════════════════════════════
+                       PRUEBAS DE COMANDOS v2.1
+                    Verificación de Funcionalidad
+═══════════════════════════════════════════════════════════════════
+
+🧪 PRUEBA 1: COMANDO .create (Comando Personalizado)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Paso 1: Crear un comando personalizado
+Comando: .create prueba1
+Resultado esperado: ✅ Comando .prueba1 Creado
+                    Ahora usa: .setprueba1 tu contenido
+
+Paso 2: Configurar el comando
+Comando: .setprueba1 Hola, este es mi primer comando personalizado
+Resultado esperado: ✅ Comando personalizado .prueba1 actualizado
+
+Paso 3: Ejecutar el comando
+Comando: .prueba1
+Resultado esperado: Hola, este es mi primer comando personalizado
+
+Verificación en JSON:
+├─ customcommands.json
+│  └─ "prueba1": {
+│     "text": "Hola, este es mi primer comando personalizado",
+│     "image": null,
+│     "mimetype": null
+│  }
+
+ESTADO: ✅ FUNCIONA
+
+───────────────────────────────────────────────────────────────────
+
+🧪 PRUEBA 2: COMANDO .create CON IMAGEN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Paso 1: Crear comando
+Comando: .create prueba2
+Resultado esperado: ✅ Comando .prueba2 Creado
+
+Paso 2: Configurar con imagen
+1. Responder una imagen con: .setprueba2 Texto descriptivo
+Resultado esperado: ✅ Comando personalizado .prueba2 actualizado con imagen
+
+Paso 3: Ejecutar el comando
+Comando: .prueba2
+Resultado esperado: Envía la imagen con caption "Texto descriptivo"
+
+Verificación en JSON:
+├─ customcommands.json
+│  └─ "prueba2": {
+│     "text": "Texto descriptivo",
+│     "image": "[base64...]",
+│     "mimetype": "image/jpeg"
+│  }
+
+ESTADO: ✅ FUNCIONA
+
+───────────────────────────────────────────────────────────────────
+
+🧪 PRUEBA 3: COMANDO DE MENÚ (.diamantes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Paso 1: Verificar que el comando de menú existe sin configurar
+Comando: .diamantes
+Resultado esperado: ℹ️ El comando .diamantes aún no está configurado.
+                    Pídele al administrador que use .setdiamantes <info>
+
+Paso 2: Configurar el comando de menú
+Comando: .setdiamantes 💎 Diamantes VIP - $50.00 - Acceso inmediato
+Resultado esperado: ✅ Comando de menú .diamantes configurado
+
+Paso 3: Ejecutar el comando
+Comando: .diamantes
+Resultado esperado: 💎 Diamantes VIP - $50.00 - Acceso inmediato
+
+Verificación en JSON:
+├─ menucommands.json
+│  └─ "diamantes": {
+│     "text": "💎 Diamantes VIP - $50.00 - Acceso inmediato",
+│     "image": null,
+│     "mimetype": null
+│  }
+
+ESTADO: ✅ FUNCIONA
+
+───────────────────────────────────────────────────────────────────
+
+🧪 PRUEBA 4: COMANDO DE MENÚ CON IMAGEN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Paso 1: Configurar comando de menú con imagen
+1. Responder imagen con: .setcanva 🎨 Canva Premium - $15.00
+Resultado esperado: ✅ Comando de menú .canva configurado con imagen
+
+Paso 2: Ejecutar el comando
+Comando: .canva
+Resultado esperado: Envía la imagen con caption "🎨 Canva Premium - $15.00"
+
+Verificación en JSON:
+├─ menucommands.json
+│  └─ "canva": {
+│     "text": "🎨 Canva Premium - $15.00",
+│     "image": "[base64...]",
+│     "mimetype": "image/jpeg"
+│  }
+
+ESTADO: ✅ FUNCIONA
+
+───────────────────────────────────────────────────────────────────
+
+🧪 PRUEBA 5: ERROR AL CONFIGURAR COMANDO NO EXISTENTE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Paso 1: Intentar configurar comando que no existe
+Comando: .setcomandoNoExiste contenido
+Resultado esperado: ⚠️ El comando .comandoNoExiste no existe.
+                    
+                    Opciones:
+                    1. Usa .create comandoNoExiste para crear uno personalizado
+                    2. O configura uno de menú
+
+ESTADO: ✅ FUNCIONA
+
+───────────────────────────────────────────────────────────────────
+
+🧪 PRUEBA 6: ACTUALIZAR COMANDO PERSONALIZADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Paso 1: Crear comando inicial
+Comando: .create micomando
+Resultado: ✅ Creado
+
+Paso 2: Configurar por primera vez
+Comando: .setmicomando Contenido inicial
+Resultado: ✅ Comando personalizado .micomando actualizado
+
+Paso 3: Actualizar contenido
+Comando: .setmicomando Contenido actualizado
+Resultado: ✅ Comando personalizado .micomando actualizado
+
+Paso 4: Verificar que se actualizó
+Comando: .micomando
+Resultado esperado: Contenido actualizado
+
+ESTADO: ✅ FUNCIONA
+
+───────────────────────────────────────────────────────────────────
+
+🧪 PRUEBA 7: ACTUALIZAR COMANDO DE MENÚ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Paso 1: Configurar comando de menú inicialmente
+Comando: .setdiamantes Contenido inicial
+Resultado: ✅ Comando de menú .diamantes configurado
+
+Paso 2: Actualizar contenido
+Comando: .setdiamantes Contenido actualizado
+Resultado: ✅ Comando de menú .diamantes configurado
+
+Paso 3: Verificar que se actualizó
+Comando: .diamantes
+Resultado esperado: Contenido actualizado
+
+ESTADO: ✅ FUNCIONA
+
+───────────────────────────────────────────────────────────────────
+
+📋 RESUMEN DE FLUJOS:
+
+COMANDO PERSONALIZADO:
+  .create <nombre>     → Crea comando vacío
+  .set<nombre> <info>  → Configura/actualiza comando
+  .<nombre>            → Ejecuta comando
+
+COMANDO DE MENÚ:
+  .set<nombre> <info>  → Configura/actualiza comando (no necesita .create)
+  .<nombre>            → Ejecuta comando (muestra "no configurado" si está vacío)
+
+DIFERENCIA CLAVE:
+  • Personalizado: Necesita .create primero
+  • Menú: Ya está en la lista predefinida, solo configurar con .set
+
+═══════════════════════════════════════════════════════════════════
+                      Lógica verificada ✅
+═══════════════════════════════════════════════════════════════════

@@ -1,0 +1,23 @@
+██╗      ██╗███████╗ ██████╗████████╗ ██████╗ 
+██║      ██║██╔════╝     ██║╚══██╔══╝██╔═══██╗
+██║      ██║███████╗ █████╔╝   ██║   ██║   ██║
+██║      ██║╚════██║██╔═══╝    ██║   ██║   ██║
+███████╗ ██║███████║███████╗   ██║   ╚██████╔╝
+╚══════╝ ╚═╝╚══════╝╚══════╝   ╚═╝    ╚═════╝ 
+
+¡Felicidades, Comandante! Tienes en tus manos el Código Fuente Completo del Bot de WhatsApp V5 Premium.
+
+COMO MOVER EL BOT A OTRA COMPUTADORA (LAPTOP):
+1. Pasa ESTA CARPETA completa (la donde está este archivo) a una memoria USB o Drive.
+2. Pégala en el Escritorio de tu NUEVA Laptop.
+3. Asegúrate de instalar NodeJS en esa computadora bajándolo de: https://nodejs.org/ (Es un botón verde grande, darle "Siguiente, Siguiente, Instalar").
+4. Asegúrate de instalar Python y marcar la casilla "Añadir al PATH". (Si no tienes Python el comando de Youtube fallará).
+5. Dale doble click al archivo "start.bat" (Si es Windows) o en la terminal corre "./start.sh" (si es Linux/Mac).
+6. ¡La ventana negra se va a abrir y ella solita instalará todas las herramientas que falten y lanzará el código QR!
+
+NOTAS:
+* Si cambias la computadora, te pedirá volver a escanear el QR como Whatsapp Web normal la primera vez.
+* La carpeta `inventory.json` y `groups.json` almacenan tus ventas y grupos activados. Si las borras, se resetea todo.
+* No necesitas copiar la carpeta pesada de `node_modules` (Si no la copias, el start.bat la baja sola de internet de nuevo para ahorrar espacio en la USB).
+
+¡Disfruta automatizando!

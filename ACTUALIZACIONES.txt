@@ -1,0 +1,186 @@
+🤖 ACTUALIZACIONES DEL BOT - RESUMEN
+=====================================
+
+⭐ ACTUALIZACIÓN MAYOR - SISTEMA DE COMANDOS DE MENÚ MEJORADO (v2.0)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ NUEVAS CARACTERÍSTICAS:
+
+1. SISTEMA DE COMANDOS DE MENÚ ROBUSTO (50+ COMANDOS)
+   - Los comandos del menú ahora funcionan independientemente
+   - Ya NO se ejecutan como .s (sticker maker)
+   - Todos los comandos del menú están disponibles:
+     .diamantes, .canva, .actas, .combos2, .reportes, .youtube, .rfc,
+     .documentos, .penales, .pasaporte, .licencias, .imss, .recetas,
+     .pape, .requisitos, .combo1, .aviso, .comandos, .sat, .refacturas,
+     .carta, .buro, .pruebas, .infonavit, .nss, .certificados, .extras,
+     .lotes, .stock2, .stock3, .stock5, .combos, .crunchyroll, .disney,
+     .max, .primevideo, .vix, .paramount, .netflix, .prime, .pago2,
+     .spotify, .apple, .reglas, .servicios, y más...
+   - Archivo de datos: menucommands.json (se crea automáticamente)
+
+2. CONFIGURACIÓN INDIVIDUAL DE COMANDOS DE MENÚ
+   - Usar: .set<nombre> para configurar cada comando
+   - Ejemplo: .setdiamantes Diamantes $50.00 - Acceso VIP
+   - Soporta imágenes: responde una imagen con .set<nombre>
+   - La imagen se envía automáticamente junto con el texto
+
+3. DIFERENCIA ENTRE .create Y COMANDOS DE MENÚ
+   - .create: Para crear comandos personalizados nuevos (no en el menú)
+   - Comandos del menú: Ya están predefinidos, solo configúralos con .set
+   - Ejemplo correcto de uso:
+     ✅ .setdiamantes contenido (comando del menú predefinido)
+     ✅ .create micomando personalizado (crear uno nuevo)
+
+4. MEJORA EN COMPATIBILIDAD
+   - El comando .create ahora NO funciona como .s
+   - Los comandos de menú ahora funcionan correctamente
+   - Sistema de compatibilidad con comandos legados
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📜 CARACTERÍSTICAS ANTERIORES (Mantienen funcionamiento):
+
+✅ IMPLEMENTADAS LAS SIGUIENTES CARACTERÍSTICAS:
+
+1. SISTEMA DE ADMIN PRIVILEGIADO
+   - El número 7571040521 tiene privilegios especiales de admin
+   - Puede ejecutar comandos de admin en cualquier grupo donde el bot sea admin
+   - No necesita ser admin del grupo para ejecutar comandos privilegiados
+   - Archivo de datos: mutedusers.json
+
+2. COMANDO .MUTE
+   - Sintaxis: .mute @usuario 5m (razón)
+   - O responder a un usuario con: .mute 5m razón
+   - Duración: se especifica con m (minutos), h (horas), d (días)
+   - El usuario muteado no puede usar comandos durante ese tiempo
+   - Cuando intenta usar comando, recibe notificación de mute con tiempo restante
+
+3. SISTEMA .STOCK MEJORADO
+   - Nuevo comando: .setstock (texto del stock) + imagen opcional
+   - La imagen se puede agregar respondiendo a una imagen con .setstock
+   - O enviando una imagen + .setstock en el mismo mensaje
+   - Comando .stock: Muestra todos los stocks o uno específico
+   - Si existe imagen guardada, se envía con la información
+   - Archivo de datos: stockdata.json
+
+4. SISTEMA .PAGO
+   - Nuevo comando: .setpago (texto del método) + imagen opcional
+   - Funciona igual que .stock pero para métodos de pago
+   - Comando .pago: Muestra el método de pago configurado con imagen
+   - Archivo de datos: pagodata.json
+
+5. COMANDO .N MEJORADO
+   - Ahora soporta:
+     • Imágenes
+     • Stickers
+     • Audios
+   - Puede responder a mensaje con media y enviar a todos
+   - Mantiene el sistema de mención fantasma (mention al todos sin escribir @)
+
+6. COMANDO .STIKER
+   - Convierte imagen/video a sticker
+   - Sintaxis: Responder a imagen con .stiker
+   - O enviar imagen + .stiker en el mismo mensaje
+   - Igual que .s pero con nombre diferente
+
+7. SISTEMA DE COMANDOS PERSONALIZADOS
+   - Crear comando: .create nombrecomando
+   - Ejemplo: .create diamantes
+   - Establecer contenido: .setdiamantes info del producto
+   - O con imagen: Responder imagen con .setdiamantes
+   - Usar: .diamantes (mostrará lo guardado)
+   - Los comandos personalizados se guardan en JSON
+   - Archivo de datos: customcommands.json
+
+📁 ARCHIVOS NUEVOS CREADOS:
+   - stockdata.json (almacena stocks con imagen)
+   - pagodata.json (almacena método de pago con imagen)
+   - customcommands.json (almacena comandos personalizados)
+   - mutedusers.json (almacena usuarios muteados con duración)
+
+⚠️ NOTA IMPORTANTE:
+   - Todos los comandos existentes se mantienen sin cambios
+   - Las nuevas características se agregan sin afectar funcionalidad previa
+   - El bot sigue respondiendo a todos los comandos originales
+
+📝 ESTRUCTURA DE DATOS:
+
+stockdata.json:
+{
+  "nombreitem": {
+    "text": "información del stock",
+    "image": "base64encodedimage",
+    "mimetype": "image/png"
+  }
+}
+
+pagodata.json:
+{
+  "metodo": {
+    "text": "información de pago",
+    "image": "base64encodedimage",
+    "mimetype": "image/png"
+  }
+}
+
+customcommands.json:
+{
+  "nombrecomando": {
+    "text": "contenido del comando",
+    "image": "base64encodedimage",
+    "mimetype": "image/png"
+  }
+}
+
+mutedusers.json:
+{
+  "chatId_userId": {
+    "mutedUntil": 1234567890,
+    "reason": "razón del mute"
+  }
+}
+
+🚀 LISTA COMPLETA DE COMANDOS AHORA DISPONIBLES:
+
+ADMINISTRACIÓN:
+- .activarbot / .desactivarbot
+- .n (notificación a todos, ahora con soporte a medios)
+- .admins
+- .kick
+- .update (promover)
+- .updown (degradar)
+- .mute (NUEVO)
+- .add
+- .link
+- .abrir / .cerrar
+- .antilink
+- .del
+
+INVENTARIO Y VENTAS:
+- .setstock (MEJORADO)
+- .stock (MEJORADO)
+- .setpago (NUEVO)
+- .pago (NUEVO)
+- .disney, .actas, .ado, etc. (todos los comandos de ventas)
+
+MULTIMEDIA:
+- .s (convertir a sticker)
+- .stiker (NUEVO - convertir a sticker)
+- .qc (quotly)
+- .play (descargar música)
+- .tt (descargar TikTok)
+
+COMANDOS PERSONALIZADOS (NUEVO SISTEMA):
+- .create (crear comando)
+- .set[comando] (establecer contenido)
+- .[comando] (ejecutar comando personalizado)
+
+MENÚS:
+- .menuprincipal
+- .menu
+- .menuadmins
+- .menufreefire
+- .menuventas
+- .menustickers
+- .menuherramientas

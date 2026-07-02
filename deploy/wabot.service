@@ -1,0 +1,22 @@
+[Unit]
+Description=Infinity WhatsApp Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bot
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wabot
+
+# Puppeteer / Chrome en headless
+Environment=HOME=/home/ubuntu
+
+[Install]
+WantedBy=multi-user.target
