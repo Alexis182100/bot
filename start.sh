@@ -23,7 +23,16 @@ fi
 echo "[2/5] Archivo .env..."
 if [ ! -f ".env" ] && [ -f ".env.example" ]; then
     cp .env.example .env
-    echo "[AVISO] Creado .env desde ejemplo — configura BOT_L2_CODE y ADMIN_PRIVILEGIADO"
+    echo "[AVISO] Creado .env — edita WA_PHONE y ejecuta ./deploy/vincular.sh"
+fi
+
+if [ -f ".env" ]; then
+    LOGIN_MODE=$(grep '^LOGIN_MODE=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' || echo "code")
+    WA_PHONE=$(grep '^WA_PHONE=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' || true)
+    if [ "$LOGIN_MODE" = "code" ] && { [ -z "$WA_PHONE" ] || [ "$WA_PHONE" = "5210000000000" ]; }; then
+        echo "[ERROR] Configura WA_PHONE en .env o ejecuta: ./deploy/vincular.sh"
+        exit 1
+    fi
 fi
 
 echo "[3/5] Chrome Puppeteer..."

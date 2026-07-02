@@ -899,6 +899,17 @@ if (chromeExecutable) {
 const AUTH_PATH = path.join(__dirname, '.wwebjs_auth');
 const WA_WEB_VERSION = process.env.WA_WEB_VERSION || '2.3000.1042562325-alpha';
 const WA_PHONE = (process.env.WA_PHONE || '').replace(/\D/g, '');
+const LOGIN_MODE = (process.env.LOGIN_MODE || (WA_PHONE ? 'code' : 'qr')).toLowerCase();
+const USE_PAIRING_CODE = LOGIN_MODE === 'code';
+
+if (USE_PAIRING_CODE && (!WA_PHONE || WA_PHONE.length < 10 || WA_PHONE === '5210000000000')) {
+    console.error('\n❌ FALTA CONFIGURAR WA_PHONE EN .env\n');
+    console.error('   1. nano .env');
+    console.error('   2. WA_PHONE=5212281234567   (tu número sin + ni espacios)');
+    console.error('   3. LOGIN_MODE=code');
+    console.error('\n   O ejecuta: ./deploy/vincular.sh\n');
+    process.exit(1);
+}
 
 const clientOptions = {
     authStrategy: new LocalAuth({ dataPath: AUTH_PATH }),
@@ -933,15 +944,15 @@ const clientOptions = {
     }
 };
 
-if (WA_PHONE) {
+if (USE_PAIRING_CODE) {
     clientOptions.pairWithPhoneNumber = {
         phoneNumber: WA_PHONE,
         showNotification: true,
-        intervalMs: 180000
+        intervalMs: 120000
     };
-    console.log(`📱 Modo vinculación por código (WA_PHONE=${WA_PHONE.slice(0, 4)}...)`);
+    console.log(`📱 Modo CÓDIGO — número ${WA_PHONE.slice(0, 4)}****${WA_PHONE.slice(-4)}`);
 } else {
-    console.log('📷 Modo QR — escanea rápido (expira ~20s). Alternativa: pon WA_PHONE en .env');
+    console.log('📷 Modo QR — escanea rápido (expira ~20s)');
 }
 
 const client = new Client(clientOptions);
@@ -951,6 +962,7 @@ const client = new Client(clientOptions);
 // ==========================================
 
 client.on('qr', (qr) => {
+    if (USE_PAIRING_CODE) return;
     console.log('\n====================================');
     console.log('🤖 ESCANEA EL CÓDIGO QR PARA ENTRAR 🤖');
     console.log('(Expira en ~20s — si falla, espera el nuevo QR)');
@@ -959,10 +971,16 @@ client.on('qr', (qr) => {
 });
 
 client.on('code', (code) => {
-    console.log('\n====================================');
-    console.log('📱 CÓDIGO DE VINCULACIÓN:', code);
-    console.log('WhatsApp → Dispositivos vinculados → Vincular con número');
-    console.log('====================================\n');
+    const formatted = String(code).replace(/(.{4})(?=.)/g, '$1-');
+    console.log('\n' + '='.repeat(52));
+    console.log('   📱  CÓDIGO DE VINCULACIÓN WHATSAPP');
+    console.log('');
+    console.log(`          ${formatted || code}`);
+    console.log('');
+    console.log('   En el teléfono del bot:');
+    console.log('   WhatsApp → ⋮ → Dispositivos vinculados');
+    console.log('   → Vincular un dispositivo → Vincular con número de teléfono');
+    console.log('='.repeat(52) + '\n');
 });
 
 client.on('authenticated', () => {
@@ -1054,6 +1072,8 @@ client.on('ready', async () => {
     reconnectAttempts = 0;
     isReconnecting = false;
     console.log('✅ Logueo Exitoso. El Bot Maestro está conectado y monitoreando los chats.');
+    console.log('💡 En cada GRUPO un admin debe escribir: .activarbot');
+    console.log('💡 Prueba en privado: .ping  |  Menú: .menu');
 
     const ytdlpVer = await checkYtdlpInstalled();
     if (ytdlpVer) {
