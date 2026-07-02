@@ -7,11 +7,31 @@ echo "========================================================"
 
 echo "[1/5] Paquetes del sistema..."
 sudo apt update -y
-sudo apt install -y curl ca-certificates gnupg \
-    ffmpeg python3 python3-pip \
-    libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-    libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-    libgbm1 libasound2 libpango-1.0-0 libcairo2
+
+# Ubuntu 24.04+ renombró varios paquetes a variantes *t64
+pick_apt_pkg() {
+    local legacy="$1"
+    local modern="$2"
+    if apt-cache show "$modern" &>/dev/null; then
+        echo "$modern"
+    else
+        echo "$legacy"
+    fi
+}
+
+CHROME_DEPS=(
+    curl ca-certificates gnupg
+    ffmpeg python3 python3-pip
+    libnss3 libdrm2
+    libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2
+    libgbm1 libpango-1.0-0 libcairo2
+    "$(pick_apt_pkg libatk1.0-0 libatk1.0-0t64)"
+    "$(pick_apt_pkg libatk-bridge2.0-0 libatk-bridge2.0-0t64)"
+    "$(pick_apt_pkg libcups2 libcups2t64)"
+    "$(pick_apt_pkg libasound2 libasound2t64)"
+)
+
+sudo apt install -y "${CHROME_DEPS[@]}"
 
 if ! command -v node &>/dev/null || [[ $(node -v | cut -d. -f1 | tr -d v) -lt 18 ]]; then
     echo "[INFO] Instalando Node.js 20 LTS..."
