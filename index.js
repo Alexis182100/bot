@@ -896,10 +896,17 @@ if (chromeExecutable) {
     console.log('⚠️ Chrome Puppeteer no encontrado en ~/.cache/puppeteer — ejecuta: npx puppeteer browsers install chrome');
 }
 
-const client = new Client({
-    authStrategy: new LocalAuth(),
+const AUTH_PATH = path.join(__dirname, '.wwebjs_auth');
+const WA_WEB_VERSION = process.env.WA_WEB_VERSION || '2.3000.1042562325-alpha';
+const WA_PHONE = (process.env.WA_PHONE || '').replace(/\D/g, '');
+
+const clientOptions = {
+    authStrategy: new LocalAuth({ dataPath: AUTH_PATH }),
+    authTimeoutMs: 120000,
+    webVersion: WA_WEB_VERSION,
     webVersionCache: {
-        type: 'local'
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html'
     },
     puppeteer: {
         headless: true,
@@ -910,7 +917,9 @@ const client = new Client({
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
+            '--no-zygote',
             '--disable-gpu',
+            '--disable-software-rasterizer',
             '--disable-extensions',
             '--disable-background-networking',
             '--disable-default-apps',
@@ -920,9 +929,22 @@ const client = new Client({
             '--mute-audio',
             '--window-size=1280,720'
         ],
-        protocolTimeout: 0 // sin límite CDP (evita Page.navigate timed out en PCs lentas)
+        protocolTimeout: 0
     }
-});
+};
+
+if (WA_PHONE) {
+    clientOptions.pairWithPhoneNumber = {
+        phoneNumber: WA_PHONE,
+        showNotification: true,
+        intervalMs: 180000
+    };
+    console.log(`📱 Modo vinculación por código (WA_PHONE=${WA_PHONE.slice(0, 4)}...)`);
+} else {
+    console.log('📷 Modo QR — escanea rápido (expira ~20s). Alternativa: pon WA_PHONE en .env');
+}
+
+const client = new Client(clientOptions);
 
 // ==========================================
 // EVENTOS PRINCIPALES
@@ -931,8 +953,24 @@ const client = new Client({
 client.on('qr', (qr) => {
     console.log('\n====================================');
     console.log('🤖 ESCANEA EL CÓDIGO QR PARA ENTRAR 🤖');
+    console.log('(Expira en ~20s — si falla, espera el nuevo QR)');
     console.log('====================================\n');
     qrcode.generate(qr, { small: true });
+});
+
+client.on('code', (code) => {
+    console.log('\n====================================');
+    console.log('📱 CÓDIGO DE VINCULACIÓN:', code);
+    console.log('WhatsApp → Dispositivos vinculados → Vincular con número');
+    console.log('====================================\n');
+});
+
+client.on('authenticated', () => {
+    console.log('✅ QR/código aceptado. Cargando sesión...');
+});
+
+client.on('change_state', (state) => {
+    console.log('🔄 Estado WhatsApp:', state);
 });
 
 client.on('loading_screen', (percent, message) => {

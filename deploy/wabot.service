@@ -8,6 +8,8 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/bot
 Environment=NODE_ENV=production
+Environment=HOME=/home/ubuntu
+EnvironmentFile=-/home/ubuntu/bot/.env
 ExecStart=/usr/bin/node index.js
 Restart=always
 RestartSec=15
@@ -15,8 +17,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=wabot
 
-# Puppeteer / Chrome en headless
-Environment=HOME=/home/ubuntu
+# Puppeteer / Chrome en headless (usar Chrome de Puppeteer, no chromium del sistema)
 
 [Install]
 WantedBy=multi-user.target
