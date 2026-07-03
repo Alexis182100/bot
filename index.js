@@ -246,7 +246,14 @@ function isActiveGroup(chatId) {
 // ==========================================
 const ADMIN_PRIVILEGIADO = process.env.ADMIN_PRIVILEGIADO || '7571040521';
 const BOT_L2_CODE = process.env.BOT_L2_CODE || '2118';
+const MAX_RECONNECT = parseInt(process.env.MAX_RECONNECT, 10) || 5;
 const BOT_PROFILE_FILE = './botprofile.json';
+
+if (fs.existsSync(path.join(__dirname, '.env'))) {
+    console.log('🔐 Configuración cargada desde .env');
+} else {
+    console.warn('⚠️ Sin .env — copia .env.example → .env para personalizar secretos.');
+}
 
 function getBotL2Panel() {
     const c = BOT_L2_CODE;
@@ -1005,7 +1012,6 @@ client.on('auth_failure', (msg) => {
 let botReady = false;
 let reconnectAttempts = 0;
 let isReconnecting = false;
-const MAX_RECONNECT = 5;
 
 async function reconnectBot(reason) {
     if (reason === 'LOGOUT') {
@@ -1039,7 +1045,14 @@ async function reconnectBot(reason) {
 
 client.on('disconnected', (reason) => {
     console.warn('🔌 Bot desconectado:', reason);
-    if (!botReady) return;
+    if (reason === 'LOGOUT') {
+        botReady = false;
+        console.error('❌ Sesión cerrada desde el teléfono. Vuelve a vincular con ./deploy/vincular.sh');
+        return;
+    }
+    const wasReady = botReady;
+    botReady = false;
+    if (!wasReady) return;
     reconnectBot(reason);
 });
 

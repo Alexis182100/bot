@@ -23,7 +23,11 @@ fi
 echo "[2/5] Archivo .env..."
 if [ ! -f ".env" ] && [ -f ".env.example" ]; then
     cp .env.example .env
-    echo "[AVISO] Creado .env — edita WA_PHONE y ejecuta ./deploy/vincular.sh"
+    echo "[AVISO] Creado .env — edita BOT_L2_CODE, ADMIN_PRIVILEGIADO y WA_PHONE"
+fi
+
+if [ ! -f ".env" ]; then
+    echo "[AVISO] Sin .env — el bot usará valores por defecto de index.js"
 fi
 
 if [ -f ".env" ]; then
@@ -40,7 +44,9 @@ CHROME_CACHE="$HOME/.cache/puppeteer/chrome"
 if [ ! -d "$CHROME_CACHE" ] || [ -z "$(find "$CHROME_CACHE" -name chrome -type f 2>/dev/null | head -1)" ]; then
     echo "[INFO] Instalando Chrome..."
     npx puppeteer browsers install chrome || {
-        echo "[ERROR] Chrome no instalado. Ejecuta: ./setup.sh"
+        echo "[ERROR] Chrome no instalado."
+        echo "        Ejecuta: ./setup.sh"
+        echo "        O manual: npx puppeteer browsers install chrome"
         exit 1
     }
 fi

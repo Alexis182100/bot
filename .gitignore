@@ -2,6 +2,7 @@ node_modules/
 .wwebjs_auth/
 .wwebjs_cache/
 .env
+cookies.txt
 tmp/
 data/cache/
 temp_audio_*
