@@ -15,7 +15,6 @@ const path = require('path');
 const { promisify } = require('util');
 const { exec } = require('child_process');
 const execAsync = promisify(exec);
-const ytSearch = require('yt-search');
 const axios = require('axios');
 const { loadEnv } = require('./load-env');
 const { MENU_COMMAND_NAMES, MENU_COMMAND_COUNT } = require('./menu-commands');
@@ -23,8 +22,6 @@ const { buildDefaultMenuText, buildDefaultCustomText, hasCommandContent } = requ
 const { renderQuoteSticker } = require('./quote-card');
 const { extractQuotedMedia, sendMediaAsView, cacheViewOnceFromMessage } = require('./media-view');
 const {
-    downloadYoutubeAudio,
-    downloadYoutubeVideo,
     downloadSocialVideo,
     safeUnlink,
     checkYtdlpInstalled,
@@ -1345,7 +1342,7 @@ client.on('ready', async () => {
     if (ytdlpVer) {
         console.log(`🎬 yt-dlp listo: ${ytdlpVer}`);
     } else {
-        console.warn('⚠️ yt-dlp NO detectado — .play .yt .tt .ig fallarán. Ejecuta: ./setup.sh');
+        console.warn('⚠️ yt-dlp NO detectado — .tt .ig pueden fallar. Ejecuta: ./setup.sh');
     }
     if (!fs.existsSync(path.join(__dirname, 'tmp'))) fs.mkdirSync(path.join(__dirname, 'tmp'), { recursive: true });
     const audioDir = path.join(__dirname, 'audiobien');
@@ -2503,35 +2500,9 @@ client.on('message_create', async msg => {
             }
         }
 
-        // --- COMANDO .PLAY (yt-search + yt-dlp + APIs de respaldo) ---
+        // --- COMANDO .PLAY (desactivado en VPS) ---
         if (command === '.play') {
-            if (!argsStr) return msg.reply("❌ Debes escribir la canción: *.play [titulo]*");
-
-            await msg.reply(`🎧 *Buscando y Procesando Audio*\n🔍 \`${argsStr}\`\n⏳ _Extrayendo de YouTube..._`);
-
-            let tempFile = null;
-            try {
-                const r = await ytSearch(argsStr);
-                const videos = r.videos;
-                if (!videos || videos.length === 0) {
-                    return msg.reply("❌ No encontré ninguna canción con ese nombre.");
-                }
-
-                const video = videos[0];
-                const videoUrl = video.url;
-                tempFile = await downloadYoutubeAudio(videoUrl);
-
-                const media = MessageMedia.fromFilePath(tempFile);
-                await chat.sendMessage(media, {
-                    caption: `🎵 *${video.title}*\n⏱️ ${video.timestamp || video.duration?.timestamp || ''}`
-                });
-            } catch (err) {
-                console.error("Play error:", err);
-                return msg.reply("❌ No pude descargar la música.\n_Verifica que yt-dlp esté instalado: ./setup.sh_");
-            } finally {
-                safeUnlink(tempFile);
-            }
-            return;
+            return msg.reply('⏸️ *.play* no está disponible en este servidor por ahora.');
         }
 
         if (command === '.tt') {
@@ -2579,33 +2550,7 @@ client.on('message_create', async msg => {
         }
 
         if (command === '.yt') {
-            let videoUrl = argsStr;
-            let title = '';
-
-            if (!videoUrl) return msg.reply("❌ Uso: *.yt [url o título]*");
-
-            await msg.reply(`🎬 *Descargando Video*\n⏳ _Procesando..._`);
-
-            let tempFile = null;
-            try {
-                if (!videoUrl.includes('youtube') && !videoUrl.includes('youtu.be')) {
-                    const r = await ytSearch(videoUrl);
-                    if (!r.videos || r.videos.length === 0) {
-                        return msg.reply("❌ No encontré ningún video con ese nombre.");
-                    }
-                    videoUrl = r.videos[0].url;
-                    title = r.videos[0].title;
-                }
-
-                tempFile = await downloadYoutubeVideo(videoUrl);
-                tempFile = await sendVideoToChat(chat, tempFile, title ? `🎬 *${title}*` : '🎬 Video de YouTube');
-            } catch (err) {
-                console.error("YouTube video error:", err);
-                return msg.reply("❌ No pude descargar el video. Verifica yt-dlp con ./setup.sh");
-            } finally {
-                safeUnlink(tempFile);
-            }
-            return;
+            return msg.reply('⏸️ *.yt* no está disponible en este servidor por ahora.');
         }
 
         // --- SISTEMA DE STICKERS ---

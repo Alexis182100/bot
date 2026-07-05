@@ -5,10 +5,9 @@ echo "========================================================"
 echo "  INSTALADOR AWS UBUNTU — BOT WHATSAPP"
 echo "========================================================"
 
-echo "[1/7] Paquetes del sistema..."
+echo "[1/5] Paquetes del sistema..."
 sudo apt update -y
 
-# Ubuntu 24.04+ renombró varios paquetes a variantes *t64
 pick_apt_pkg() {
     local legacy="$1"
     local modern="$2"
@@ -39,29 +38,21 @@ if ! command -v node &>/dev/null || [[ $(node -v | cut -d. -f1 | tr -d v) -lt 18
     sudo apt install -y nodejs
 fi
 
-echo "[2/7] yt-dlp + EJS + PO Token (para .play / .yt)..."
+echo "[2/5] yt-dlp (para .tt / .ig — .play desactivado en VPS)..."
 python3 -m pip install -U pip --break-system-packages 2>/dev/null || python3 -m pip install -U pip
-python3 -m pip install -U yt-dlp yt-dlp-ejs bgutil-ytdlp-pot-provider --break-system-packages 2>/dev/null \
-    || python3 -m pip install -U yt-dlp yt-dlp-ejs bgutil-ytdlp-pot-provider
+python3 -m pip install -U yt-dlp yt-dlp-ejs --break-system-packages 2>/dev/null \
+    || python3 -m pip install -U yt-dlp yt-dlp-ejs
 
-echo "[3/7] Bypass YouTube en VPS (WARP + PO Token)..."
-if [ -f "deploy/setup-youtube-bypass.sh" ]; then
-    chmod +x deploy/setup-youtube-bypass.sh
-    ./deploy/setup-youtube-bypass.sh || echo "[AVISO] Bypass YouTube falló — .play puede no funcionar en VPS hasta ejecutar: ./deploy/setup-youtube-bypass.sh"
-else
-    echo "[AVISO] deploy/setup-youtube-bypass.sh no encontrado."
-fi
-
-echo "[4/7] Dependencias npm..."
+echo "[3/5] Dependencias npm..."
 npm install
 
-echo "[5/7] Chrome Puppeteer..."
+echo "[4/5] Chrome Puppeteer..."
 npx puppeteer browsers install chrome || {
     echo "[ERROR] Falló instalación de Chrome. Reintenta: npx puppeteer browsers install chrome"
     exit 1
 }
 
-echo "[6/7] Configuración..."
+echo "[5/5] Configuración..."
 if [ ! -f ".env" ] && [ -f ".env.example" ]; then
     cp .env.example .env
     echo "[INFO] Creado .env — edítalo antes de producción."
@@ -70,7 +61,8 @@ fi
 chmod +x start.sh 2>/dev/null || true
 mkdir -p tmp data/cache data
 
-echo "[7/7] Swap (recomendado en VPS de 2GB)..."
+echo ""
+echo "[EXTRA] Swap (recomendado en VPS de 2GB)..."
 TOTAL_RAM_MB=$(free -m | awk '/^Mem:/{print $2}')
 HAS_SWAP=$(free -m | awk '/^Swap:/{print $2}')
 if [ "$TOTAL_RAM_MB" -le 2500 ] && [ "$HAS_SWAP" -eq 0 ]; then
@@ -80,9 +72,9 @@ if [ "$TOTAL_RAM_MB" -le 2500 ] && [ "$HAS_SWAP" -eq 0 ]; then
         sudo mkswap /swapfile
         sudo swapon /swapfile
         grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
-        echo "[OK] Swap de 1GB activo (evita que el kernel mate al bot por falta de RAM)."
+        echo "[OK] Swap de 1GB activo."
     else
-        echo "[AVISO] No se pudo crear swap. El bot puede morir bajo presión de memoria."
+        echo "[AVISO] No se pudo crear swap."
     fi
 else
     echo "[OK] Swap existente o RAM suficiente."
@@ -92,10 +84,7 @@ echo ""
 echo "========================================================"
 echo "  INSTALACIÓN COMPLETA"
 echo "========================================================"
-echo "  1. Edita .env (SYSTEM_UNLOCK_CODE, BOT_L2_CODE, ADMIN_PRIVILEGIADO)"
-echo "  2. Inicia: ./start.sh"
-echo "  3. Producción con systemd:"
-echo "     sudo cp deploy/wabot.service /etc/systemd/system/"
-echo "     sudo systemctl daemon-reload && sudo systemctl enable wabot"
-echo "     sudo systemctl start wabot"
+echo "  1. Edita .env (SYSTEM_UNLOCK_CODE, ADMIN_PRIVILEGIADO, WA_PHONE)"
+echo "  2. Vincula: ./deploy/vincular.sh"
+echo "  3. Inicia: ./start.sh  o  pm2 start index.js --name bot"
 echo "========================================================"

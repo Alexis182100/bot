@@ -122,7 +122,7 @@ fi
 
 cd "$TARGET_DIR"
 echo "[2/4] Ejecutando setup.sh ..."
-chmod +x setup.sh start.sh deploy/install.sh deploy/setup-youtube-bypass.sh 2>/dev/null || true
+chmod +x setup.sh start.sh deploy/install.sh 2>/dev/null || true
 ./setup.sh
 
 echo "[3/4] Configurando .env ..."
