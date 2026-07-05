@@ -863,7 +863,7 @@ const BUILTIN_COMMANDS = [
     'encuesta', 'voto', 'cerrarencuesta', 'tr', 'traducir', 'botl2', 'totalcomandos',
     'programados', 'cancelarprogramado',
     'activartienda', 'tienda', 'saldo', 'comprar', 'cargarsaldo', 'tiendaid',
-    'registro', 'clientes', 'iden', 'addstock', 'setproducto',
+    'registro', 'clientes', 'iden', 'addstock', 'setproducto', 'setprecio', 'precios',
     'cargar', 'cancelarcarga', 'tiendaadmin', 'verstock',
     'agregarservicio', 'servicios'
 ];
@@ -1642,6 +1642,44 @@ client.on('message_create', async msg => {
                     unitLabel: category === 'completa' ? 'cuenta' : 'perfil'
                 });
                 return msg.reply(`✅ Producto *${prodName.toUpperCase()}* (${category}) — $${price}\n🆔 Tienda: \`${ctx.storeId}\``);
+            }
+
+            if (command === '.setprecio' || command === '.precio') {
+                const ctx = store.getAdminContext(msg.from);
+                if (!ctx) return msg.reply('⚠️ Primero *.iden [ID]* para elegir la tienda.');
+                if (argsArray.length < 3) {
+                    return msg.reply(
+                        '⚠️ Uso:\n' +
+                        '*.setprecio max perfil 15*\n' +
+                        '*.setprecio prime completa 30*\n\n' +
+                        'Ver precios actuales: *.precios*'
+                    );
+                }
+                const prodName = argsArray[0];
+                const category = argsArray[1].toLowerCase();
+                const price = parseFloat(argsArray[2]);
+                if (!['perfil', 'completa'].includes(category) || isNaN(price) || price <= 0) {
+                    return msg.reply('⚠️ Categoría: *perfil* o *completa*. Precio numérico positivo.');
+                }
+                const updated = store.updateProductPrice(ctx.storeId, prodName, category, price);
+                if (!updated) {
+                    return msg.reply(
+                        `❌ Producto *${prodName}* (${category}) no existe.\n\n` +
+                        `Créalo con *.setproducto ${prodName} ${category} ${price}* o *.cargar*`
+                    );
+                }
+                return msg.reply(
+                    `✅ Precio actualizado\n\n` +
+                    `📦 *${updated.name}* (${category})\n` +
+                    `💲 Nuevo precio: *$${updated.price}*\n` +
+                    `🆔 Tienda: \`${ctx.storeId}\``
+                );
+            }
+
+            if (command === '.precios' || command === '.listaprecios') {
+                const ctx = store.getAdminContext(msg.from);
+                if (!ctx) return msg.reply('⚠️ Primero *.iden [ID]* para elegir la tienda.');
+                return msg.reply(store.buildPricesList(ctx.storeId));
             }
 
             if (command === '.addstock') {
