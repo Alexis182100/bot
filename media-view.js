@@ -3,6 +3,14 @@ const { MessageMedia } = require('whatsapp-web.js');
 const viewOnceCache = new Map();
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
+// Purga periódica: sin esto las entradas expiradas se acumulan en RAM para siempre
+setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of viewOnceCache.entries()) {
+        if (now - v.at >= CACHE_TTL_MS) viewOnceCache.delete(k);
+    }
+}, 10 * 60 * 1000).unref();
+
 function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }

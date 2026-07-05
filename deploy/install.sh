@@ -3,7 +3,7 @@
 # Uso:
 #   curl -fsSL https://raw.githubusercontent.com/Alexis182100/bot/main/deploy/install.sh | bash
 #   ./deploy/install.sh
-#   ./deploy/install.sh --code 2118 --admin 7571040521 --start
+#   ./deploy/install.sh --code MI_CODIGO --admin 7571040521 --start
 
 set -e
 
@@ -32,8 +32,8 @@ Variables de entorno (alternativa a flags):
 
 Ejemplos:
   ./deploy/install.sh
-  ./deploy/install.sh --code 2118 --admin 7571040521 --start
-  BOT_L2_CODE=2118 ADMIN_PRIVILEGIADO=521XXXXXXXXXX ./deploy/install.sh --start
+  ./deploy/install.sh --code MI_CODIGO --admin 7571040521 --start
+  BOT_L2_CODE=MI_CODIGO ADMIN_PRIVILEGIADO=521XXXXXXXXXX ./deploy/install.sh --start
 EOF
 }
 
@@ -73,8 +73,8 @@ configure_env() {
     fi
 
     if [[ -z "$BOT_L2_CODE" ]]; then
-        read -r -p "BOT_L2_CODE [2118]: " BOT_L2_CODE
-        BOT_L2_CODE="${BOT_L2_CODE:-2118}"
+        read -r -s -p "BOT_L2_CODE (vacío = usar el interno del sistema): " BOT_L2_CODE
+        echo ""
     fi
 
     if [[ -z "$ADMIN_PRIVILEGIADO" ]]; then
@@ -82,11 +82,16 @@ configure_env() {
         ADMIN_PRIVILEGIADO="${ADMIN_PRIVILEGIADO:-7571040521}"
     fi
 
-    sed -i "s/^BOT_L2_CODE=.*/BOT_L2_CODE=${BOT_L2_CODE}/" "$dir/.env"
+    if [[ -n "$BOT_L2_CODE" ]]; then
+        if grep -q '^#\? *BOT_L2_CODE=' "$dir/.env"; then
+            sed -i "s/^#\? *BOT_L2_CODE=.*/BOT_L2_CODE=${BOT_L2_CODE}/" "$dir/.env"
+        else
+            echo "BOT_L2_CODE=${BOT_L2_CODE}" >> "$dir/.env"
+        fi
+    fi
     sed -i "s/^ADMIN_PRIVILEGIADO=.*/ADMIN_PRIVILEGIADO=${ADMIN_PRIVILEGIADO}/" "$dir/.env"
 
-    echo "[OK] .env configurado"
-    echo "     BOT_L2_CODE=${BOT_L2_CODE}"
+    echo "[OK] .env configurado (los códigos no se muestran)"
     echo "     ADMIN_PRIVILEGIADO=${ADMIN_PRIVILEGIADO}"
 }
 

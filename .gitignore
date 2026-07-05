@@ -3,6 +3,7 @@ node_modules/
 .wwebjs_cache/
 .env
 cookies.txt
+# cookies/youtube.txt SÍ se commitea (solo cookies de YouTube para .play)
 tmp/
 data/cache/
 temp_audio_*
@@ -15,6 +16,12 @@ temp_video_*
 *.mpeg
 *.deb
 *.zip
+# Los audios de bienvenida SÍ van al repo (excepción a las reglas de arriba)
+!audiobien/*.mp3
+!audiobien/*.mpeg
+!audiobien/*.ogg
+!audiobien/*.m4a
+!audiobien/*.opus
 
 # Datos en vivo del bot (cada despliegue genera los suyos)
 groups.json
@@ -30,3 +37,7 @@ warns.json
 customcommands.json
 botprofile.json
 menucommands.json
+storedata.json
+storedata.json.bak
+data/store/
+data/groups/

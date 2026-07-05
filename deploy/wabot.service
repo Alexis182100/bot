@@ -1,10 +1,11 @@
 [Unit]
-Description=Infinity WhatsApp Bot
+Description=Infinity WhatsApp Bot (1 bot por servidor)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
+# Ajusta User/rutas a tu VPS (instalador deploy/install.sh los reemplaza)
 User=ubuntu
 WorkingDirectory=/home/ubuntu/bot
 Environment=NODE_ENV=production
@@ -13,11 +14,16 @@ EnvironmentFile=-/home/ubuntu/bot/.env
 ExecStart=/usr/bin/node index.js
 Restart=always
 RestartSec=15
+# Evita que Chrome devore toda la RAM del VPS de 2GB (el kernel mata solo este servicio, no el sistema)
+MemoryMax=1600M
+OOMScoreAdjust=200
+LimitNOFILE=65535
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=wabot
-
-# Puppeteer / Chrome en headless (usar Chrome de Puppeteer, no chromium del sistema)
+# Espera del apagado limpio (gracefulShutdown destruye Chrome)
+TimeoutStopSec=25
+KillMode=mixed
 
 [Install]
 WantedBy=multi-user.target

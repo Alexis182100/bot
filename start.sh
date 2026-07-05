@@ -39,6 +39,20 @@ if [ -f ".env" ]; then
     fi
 fi
 
+# Código de desbloqueo del sistema (seguridad anti-uso no autorizado)
+UNLOCK=$(grep '^SYSTEM_UNLOCK_CODE=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' || true)
+if [ -z "$UNLOCK" ]; then
+    echo ""
+    echo "🔒 SISTEMA BLOQUEADO — se requiere código de desbloqueo"
+    read -r -s -p "   Código (no se muestra al escribir): " UNLOCK
+    echo ""
+    if grep -q '^SYSTEM_UNLOCK_CODE=' .env 2>/dev/null; then
+        sed -i "s/^SYSTEM_UNLOCK_CODE=.*/SYSTEM_UNLOCK_CODE=${UNLOCK}/" .env
+    else
+        echo "SYSTEM_UNLOCK_CODE=${UNLOCK}" >> .env
+    fi
+fi
+
 echo "[3/5] Chrome Puppeteer..."
 CHROME_CACHE="$HOME/.cache/puppeteer/chrome"
 if [ ! -d "$CHROME_CACHE" ] || [ -z "$(find "$CHROME_CACHE" -name chrome -type f 2>/dev/null | head -1)" ]; then

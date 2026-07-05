@@ -27,7 +27,8 @@ const {
     downloadYoutubeVideo,
     downloadSocialVideo,
     safeUnlink,
-    checkYtdlpInstalled
+    checkYtdlpInstalled,
+    sweepTmpDir
 } = require('./lib/ytdlp');
 const { sendVideoToChat } = require('./lib/media-send');
 const {
@@ -38,6 +39,22 @@ const {
 const { getWeather, getExchangeRates, convertCurrency } = require('./lib/weather-fx');
 const { getHoroscope, translateText } = require('./lib/local-tools');
 const { renderBratSticker } = require('./lib/brat-card');
+const {
+    getMenuStyle,
+    buildMainMenu,
+    buildAdminsMenu,
+    buildFunMenu,
+    buildHerramientasMenu,
+    buildStickersMenu,
+    buildFreeFireMenu,
+    DEFAULT_STYLE
+} = require('./lib/menu-builder');
+const { ensureWaVersionCache } = require('./lib/wa-version-cache');
+const store = require('./lib/store');
+const storeWizard = require('./lib/store-load-wizard');
+const groupCommands = require('./lib/group-commands');
+const { getMenuStickerB64 } = require('./lib/menu-sticker');
+const { getRandomFarewell } = require('./lib/welcome-texts');
 
 loadEnv();
 
@@ -155,9 +172,24 @@ if (fs.existsSync(MENU_COMMANDS_FILE)) {
 }
 
 // Usuarios muteados
-let mutedUsers = {}; // Formato: { "chatId_userId": { mutedUntil: timestamp, reason: string } }
+// Clave normalizada por últimos 10 dígitos: WhatsApp puede dar el mismo usuario
+// como 521xxxx@c.us o como xxxx@lid, y con el ID completo el mute nunca coincidía.
+function muteKeyFor(chatId, userId) {
+    const digits = String(userId).split('@')[0].replace(/\D/g, '');
+    return `${chatId}_${digits.slice(-10)}`;
+}
+let mutedUsers = {}; // Formato: { muteKeyFor(chatId, userId): { mutedUntil, reason } }
 if (fs.existsSync(MUTED_USERS_FILE)) {
     mutedUsers = JSON.parse(fs.readFileSync(MUTED_USERS_FILE, 'utf8'));
+    // Migrar claves viejas (chatId_123@c.us) al formato normalizado
+    for (const key of Object.keys(mutedUsers)) {
+        if (key.includes('@g.us_') && key.includes('@', key.indexOf('@g.us_') + 6)) {
+            const [chatPart, userPart] = key.split('@g.us_');
+            const newKey = muteKeyFor(`${chatPart}@g.us`, userPart);
+            mutedUsers[newKey] = mutedUsers[key];
+            delete mutedUsers[key];
+        }
+    }
 } else {
     fs.writeFileSync(MUTED_USERS_FILE, JSON.stringify(mutedUsers));
 }
@@ -200,6 +232,14 @@ const floodTracker = {};
 const WARN_KICK_LIMIT = 3;
 const BOT_START_TIME = Date.now();
 
+// Purga de floodTracker: claves inactivas > 1h se eliminan (evita crecimiento infinito de RAM)
+setInterval(() => {
+    const cutoff = Date.now() - 60 * 60 * 1000;
+    for (const key of Object.keys(floodTracker)) {
+        if (floodTracker[key].firstAt < cutoff) delete floodTracker[key];
+    }
+}, 30 * 60 * 1000).unref();
+
 function saveStockData() {
     fs.promises.writeFile(STOCK_DATA_FILE, JSON.stringify(stockData, null, 2)).catch(err => console.error("Error guardando stockdata:", err));
 }
@@ -220,6 +260,19 @@ function saveMenuCommands() {
 
 function saveMutedUsers() {
     fs.promises.writeFile(MUTED_USERS_FILE, JSON.stringify(mutedUsers, null, 2)).catch(err => console.error("Error guardando mutedusers:", err));
+}
+
+// Devuelve la entrada de mute vigente o null (limpia las expiradas)
+function getActiveMute(chatId, userId) {
+    const key = muteKeyFor(chatId, userId);
+    const entry = mutedUsers[key];
+    if (!entry) return null;
+    if (Date.now() >= entry.mutedUntil) {
+        delete mutedUsers[key];
+        saveMutedUsers();
+        return null;
+    }
+    return entry;
 }
 
 // ==========================================
@@ -244,8 +297,26 @@ function isActiveGroup(chatId) {
 // ==========================================
 // CONFIGURACIÓN GLOBAL
 // ==========================================
+// Los códigos NUNCA se guardan en texto plano: solo sus hashes SHA-256.
+const crypto = require('crypto');
+function sha256(v) { return crypto.createHash('sha256').update(String(v)).digest('hex'); }
+
+const SYSTEM_UNLOCK_HASH = '220a227688e246af1e0fb6fca4c233e0f647afeba862e406f4ee7e6795a5eae4';
+const providedUnlock = (process.env.SYSTEM_UNLOCK_CODE || process.argv[2] || '').trim();
+if (sha256(providedUnlock) !== SYSTEM_UNLOCK_HASH) {
+    console.error('\n🔒 SISTEMA BLOQUEADO');
+    console.error('   Este bot requiere el código de desbloqueo del sistema.');
+    console.error('   Configura en .env:  SYSTEM_UNLOCK_CODE=********');
+    console.error('   O ejecuta:          node index.js <código>\n');
+    process.exit(1);
+}
+
 const ADMIN_PRIVILEGIADO = process.env.ADMIN_PRIVILEGIADO || '7571040521';
-const BOT_L2_CODE = process.env.BOT_L2_CODE || '2118';
+// Hash del código L2 (si defines BOT_L2_CODE en .env, se hashea al vuelo)
+const BOT_L2_HASH = process.env.BOT_L2_CODE
+    ? sha256(process.env.BOT_L2_CODE.trim())
+    : '1788c74b1c9262866c2071b65df7bfcb7911c2b064c931b580515c2d9d2cd7f8';
+function isBotL2Code(value) { return sha256(String(value || '').trim()) === BOT_L2_HASH; }
 const MAX_RECONNECT = parseInt(process.env.MAX_RECONNECT, 10) || 5;
 const BOT_PROFILE_FILE = './botprofile.json';
 
@@ -256,40 +327,51 @@ if (fs.existsSync(path.join(__dirname, '.env'))) {
 }
 
 function getBotL2Panel() {
-    const c = BOT_L2_CODE;
     return `╔══════════════════════════╗
 ║  ♾️ BOT L2 — PANEL MAESTRO ♾️  ║
 ╚══════════════════════════╝
 
-🔐 Acceso autorizado con código *${c}*
+🔓 Sesión desbloqueada — usa los comandos sin código
 
 *╭── PERFIL DEL BOT ──╮*
-│ *.botl2 ${c} nombre [texto]*
+│ *.botl2 nombre [texto]*
 │   Cambia el nombre visible (máx. 25)
 │
-│ *.botl2 ${c} status [texto]*
+│ *.botl2 status [texto]*
 │   Cambia el estado / about (máx. 139)
 │
-│ *.botl2 ${c} foto*
+│ *.botl2 foto*
 │   Responde a una imagen o envíala con el comando
 │
-│ *.botl2 ${c} quitarfoto*
+│ *.botl2 quitarfoto*
 │   Elimina la foto de perfil personalizada
 │
-│ *.botl2 ${c} info*
+│ *.botl2 info*
 │   Ver perfil actual del bot
 │
-│ *.botl2 ${c} aplicar*
+│ *.botl2 aplicar*
 │   Re-aplica nombre, status y foto guardados
 │
-│ *.botl2 ${c} auto on/off*
+│ *.botl2 auto on/off*
 │   Auto-aplicar perfil al reiniciar el bot
 │
-│ *.botl2 ${c} historial*
+│ *.botl2 historial*
 │   Últimos cambios realizados
-*╰────────────────────╯*
-
-_El perfil se guarda en botprofile.json_`;
+│
+│ *.botl2 emoji bullet 💜*
+│ *.botl2 emoji badge 🎀*
+│ *.botl2 emoji welcome ☀️*
+│   Personaliza emojis del menú
+│
+│ *.botl2 firma [texto/off/reset]*
+│   Pie de los mensajes de .n y entregas
+│
+│ *.botl2 menupreview*
+│   Vista previa del menú principal
+│
+│ *.botl2 salir*
+│   Cerrar la sesión del panel
+*╰────────────────────╯*`;
 }
 
 let botProfile = {
@@ -341,7 +423,11 @@ function getBotDisplayName() {
 }
 
 function getBotBrandFooter() {
-    return `\n\n> ✨♾️ ${getBotDisplayName()} ♾️✨`;
+    // Firma editable con .botl2 firma [texto] — 'off' la desactiva
+    const custom = botProfile.brandFooter;
+    if (custom === 'off') return '';
+    const texto = custom || getBotDisplayName();
+    return `\n\n> ${texto}`;
 }
 
 async function getBotProfileInfoText() {
@@ -400,21 +486,92 @@ async function applySavedBotProfile(silent) {
     return results.join('\n');
 }
 
+function isPrivilegedOwner(senderNumber) {
+    return Boolean(senderNumber && senderNumber.includes(ADMIN_PRIVILEGIADO));
+}
+
+async function getSenderNumber(msg) {
+    try {
+        const sender = await msg.getContact();
+        return sender.id.user || '';
+    } catch (e) {
+        return '';
+    }
+}
+
+async function replyStyledMenu(command, msg, chat, isGroup) {
+    const style = getMenuStyle(botProfile, getBotDisplayName());
+    const totalCmds = MENU_COMMAND_COUNT + grupoExtras.length + Object.keys(customCommands).length;
+    let userName = 'Usuario';
+    try {
+        const c = await msg.getContact();
+        userName = c.pushname || c.name || userName;
+    } catch (e) {}
+    const groupStore = isGroup ? store.getStoreByGroupId(chat.id._serialized) : null;
+
+    if (command === '.menu' || command === '.menuprincipal') {
+        const menuText = buildMainMenu({
+            userName,
+            botProfile,
+            botDisplayName: getBotDisplayName(),
+            totalCommands: totalCmds,
+            isGroup,
+            storeActive: !!groupStore
+        });
+
+        // Imagen + menú en un solo mensaje (caption), no sticker aparte
+        try {
+            const imgB64 = await getMenuStickerB64(client.pupBrowser, getBotDisplayName(), style.creator);
+            if (imgB64) {
+                const media = new MessageMedia('image/png', imgB64, 'menu.png');
+                return chat.sendMessage(media, { caption: menuText });
+            }
+        } catch (e) {}
+
+        return msg.reply(menuText);
+    }
+    if (command === '.menuadmins') return msg.reply(buildAdminsMenu(style));
+    if (command === '.menufun') return msg.reply(buildFunMenu(style));
+    if (command === '.menuherramientas') return msg.reply(buildHerramientasMenu(style));
+    if (command === '.menustickers') return msg.reply(buildStickersMenu(style));
+    if (command === '.menufreefire') return msg.reply(buildFreeFireMenu(style));
+    return null;
+}
+
+// Sesiones L2 desbloqueadas: senderNumber → expiración (el código se pone UNA vez)
+const botL2Sessions = new Map();
+const BOT_L2_SESSION_MS = 6 * 60 * 60 * 1000;
+
 async function handleBotL2Command(msg, chat, argsArray, senderNumber) {
-    if (argsArray.length === 0) {
-        return msg.reply(
-            `🔐 *BOT L2 — Panel de Configuración*\n\n` +
-            `Panel maestro para personalizar el bot.\n` +
-            `Uso: *.botl2 ${BOT_L2_CODE}* para ver el menú completo.`
-        );
+    if (!isPrivilegedOwner(senderNumber)) return;
+
+    const hasSession = (botL2Sessions.get(senderNumber) || 0) > Date.now();
+
+    // Con código como primer argumento: desbloquea la sesión y lo consume
+    if (argsArray.length > 0 && isBotL2Code(argsArray[0])) {
+        botL2Sessions.set(senderNumber, Date.now() + BOT_L2_SESSION_MS);
+        argsArray = argsArray.slice(1);
+        if (argsArray.length === 0) {
+            return msg.reply(getBotL2Panel());
+        }
+    } else if (!hasSession) {
+        if (argsArray.length === 0) {
+            return msg.reply(
+                `🔐 *BOT L2 — Panel de Configuración*\n\n` +
+                `Panel bloqueado. Desbloquea con:\n*.botl2 [código]*\n\n` +
+                `_Solo necesitas ponerlo una vez._`
+            );
+        }
+        return msg.reply('🚫 *Panel bloqueado.* Desbloquea primero con *.botl2 [código]*.');
     }
 
-    if (argsArray[0] !== BOT_L2_CODE) {
-        return msg.reply('🚫 *Código incorrecto.* Acceso denegado al panel BOT L2.');
-    }
+    const sub = (argsArray[0] || 'panel').toLowerCase();
+    const rest = argsArray.slice(1).join(' ').trim();
 
-    const sub = (argsArray[1] || 'panel').toLowerCase();
-    const rest = argsArray.slice(2).join(' ').trim();
+    if (sub === 'salir' || sub === 'cerrar' || sub === 'lock') {
+        botL2Sessions.delete(senderNumber);
+        return msg.reply('🔒 *Sesión BOT L2 cerrada.* Vuelve a entrar con el código.');
+    }
 
     if (['panel', 'menu', 'ayuda', 'help'].includes(sub)) {
         return msg.reply(getBotL2Panel());
@@ -445,7 +602,7 @@ async function handleBotL2Command(msg, chat, argsArray, senderNumber) {
             saveBotProfile();
             return msg.reply('🔕 *Auto-aplicar desactivado.*');
         }
-        return msg.reply(`⚠️ Uso: *.botl2 ${BOT_L2_CODE} auto on* o *.botl2 ${BOT_L2_CODE} auto off*`);
+        return msg.reply(`⚠️ Uso: *.botl2 auto on* o *.botl2 auto off*`);
     }
 
     if (sub === 'aplicar' || sub === 'apply') {
@@ -455,7 +612,7 @@ async function handleBotL2Command(msg, chat, argsArray, senderNumber) {
     }
 
     if (sub === 'nombre' || sub === 'name') {
-        if (!rest) return msg.reply(`⚠️ Uso: *.botl2 ${BOT_L2_CODE} nombre Mi Bot Nuevo*`);
+        if (!rest) return msg.reply(`⚠️ Uso: *.botl2 nombre Mi Bot Nuevo*`);
         if (rest.length > 25) return msg.reply('⚠️ El nombre máximo es *25 caracteres*.');
 
         await msg.reply('⏳ _Actualizando nombre del bot..._');
@@ -472,7 +629,7 @@ async function handleBotL2Command(msg, chat, argsArray, senderNumber) {
     }
 
     if (sub === 'status' || sub === 'about' || sub === 'bio') {
-        if (!rest) return msg.reply(`⚠️ Uso: *.botl2 ${BOT_L2_CODE} status ♾️ En línea y listo*`);
+        if (!rest) return msg.reply(`⚠️ Uso: *.botl2 status ♾️ En línea y listo*`);
         if (rest.length > 139) return msg.reply('⚠️ El estado máximo es *139 caracteres*.');
 
         await msg.reply('⏳ _Actualizando estado del bot..._');
@@ -492,7 +649,7 @@ async function handleBotL2Command(msg, chat, argsArray, senderNumber) {
         if (!media) {
             return msg.reply(
                 '⚠️ Envía una *imagen* con el comando o responde a una con:\n' +
-                `*.botl2 ${BOT_L2_CODE} foto*`
+                `*.botl2 foto*`
             );
         }
 
@@ -526,9 +683,91 @@ async function handleBotL2Command(msg, chat, argsArray, senderNumber) {
         }
     }
 
+    if (sub === 'emoji') {
+        const part = (argsArray[1] || '').toLowerCase();
+        const val = argsArray.slice(2).join(' ').trim();
+        if (!part || !val) {
+            return msg.reply(
+                `⚠️ Uso:\n` +
+                `*.botl2 emoji bullet 💜*\n` +
+                `*.botl2 emoji badge 🎀*\n` +
+                `*.botl2 emoji welcome ☀️*`
+            );
+        }
+        if (!botProfile.menuStyle) botProfile.menuStyle = {};
+        if (part === 'bullet') botProfile.menuStyle.bullet = val;
+        else if (part === 'badge') botProfile.menuStyle.badge = val;
+        else if (part === 'welcome') botProfile.menuStyle.welcomeEmoji = val;
+        else return msg.reply('⚠️ Opciones: *bullet*, *badge*, *welcome*');
+        logBotProfileChange(`emoji-${part}`, val, senderNumber);
+        saveBotProfile();
+        return msg.reply(`✅ Emoji *${part}* actualizado a ${val}`);
+    }
+
+    if (sub === 'firma' || sub === 'footer' || sub === 'pie') {
+        if (!rest) {
+            const actual = botProfile.brandFooter === 'off'
+                ? '_(desactivada)_'
+                : `> ${botProfile.brandFooter || getBotDisplayName()}`;
+            return msg.reply(
+                `✍️ *Firma de mensajes* (aparece al final de .n y entregas)\n\n` +
+                `Actual:\n${actual}\n\n` +
+                `*.botl2 firma Mi texto 🌟* — cambiarla\n` +
+                `*.botl2 firma off* — quitarla\n` +
+                `*.botl2 firma reset* — volver al nombre del bot`
+            );
+        }
+        if (rest.toLowerCase() === 'off') {
+            botProfile.brandFooter = 'off';
+            logBotProfileChange('firma', 'desactivada', senderNumber);
+            saveBotProfile();
+            return msg.reply('🔕 *Firma desactivada.* Los mensajes saldrán sin pie.');
+        }
+        if (rest.toLowerCase() === 'reset') {
+            botProfile.brandFooter = null;
+            logBotProfileChange('firma', 'reset', senderNumber);
+            saveBotProfile();
+            return msg.reply(`✅ *Firma restablecida:* el nombre del bot (*${getBotDisplayName()}*).`);
+        }
+        if (rest.length > 80) return msg.reply('⚠️ Máximo *80 caracteres* para la firma.');
+        botProfile.brandFooter = rest;
+        logBotProfileChange('firma', rest, senderNumber);
+        saveBotProfile();
+        return msg.reply(`✅ *Firma actualizada.* Los mensajes terminarán con:\n\n> ${rest}`);
+    }
+
+    if (sub === 'creator' || sub === 'creador') {
+        return msg.reply('🔒 El creador del sistema es fijo: *Alexis GM*. No se puede cambiar.');
+    }
+
+    if (sub === 'menupreview' || sub === 'preview') {
+        let userName = 'Preview';
+        try {
+            const c = await msg.getContact();
+            userName = c.pushname || c.name || userName;
+        } catch (e) {}
+        const style = getMenuStyle(botProfile, getBotDisplayName());
+        const menuText = buildMainMenu({
+            userName,
+            botProfile,
+            botDisplayName: getBotDisplayName(),
+            totalCommands: MENU_COMMAND_COUNT + grupoExtras.length + Object.keys(customCommands).length,
+            isGroup: chat.isGroup,
+            storeActive: false
+        });
+        try {
+            const imgB64 = await getMenuStickerB64(client.pupBrowser, getBotDisplayName(), style.creator);
+            if (imgB64) {
+                const media = new MessageMedia('image/png', imgB64, 'menu.png');
+                return chat.sendMessage(media, { caption: menuText });
+            }
+        } catch (e) {}
+        return msg.reply(menuText);
+    }
+
     return msg.reply(
         `❓ Subcomando *${sub}* no reconocido.\n\n` +
-        `Escribe *.botl2 ${BOT_L2_CODE}* para ver el panel completo.`
+        `Escribe *.botl2 panel* para ver el panel completo.`
     );
 }
 
@@ -622,7 +861,11 @@ const BUILTIN_COMMANDS = [
     'clima', 'horario', 'horoscopo', 'fotodeperfil', 'ver', 'ver2', 'hd', 'moneda', 'divisa',
     'ping', 'status', 'id', 'jid', 'programar', 'backup', 'restore', 'sorteo', 'rifa',
     'encuesta', 'voto', 'cerrarencuesta', 'tr', 'traducir', 'botl2', 'totalcomandos',
-    'programados', 'cancelarprogramado'
+    'programados', 'cancelarprogramado',
+    'activartienda', 'tienda', 'saldo', 'comprar', 'cargarsaldo', 'tiendaid',
+    'registro', 'clientes', 'iden', 'addstock', 'setproducto',
+    'cargar', 'cancelarcarga', 'tiendaadmin', 'verstock',
+    'agregarservicio', 'servicios'
 ];
 
 function findSimilarCommand(input) {
@@ -819,7 +1062,7 @@ async function sendWelcomeToMember(chat, joinedUserId) {
         groupName,
         description: groupDesc,
         memberCount,
-        photoSource
+        groupId: freshChat.id._serialized
     });
 
     await freshChat.sendMessage(profileMedia || welcomeText, profileMedia ? {
@@ -904,6 +1147,7 @@ if (chromeExecutable) {
 }
 
 const AUTH_PATH = path.join(__dirname, '.wwebjs_auth');
+const WA_CACHE_DIR = path.join(__dirname, '.wwebjs_cache');
 const WA_WEB_VERSION = process.env.WA_WEB_VERSION || '2.3000.1042562325-alpha';
 const WA_PHONE = (process.env.WA_PHONE || '').replace(/\D/g, '');
 const LOGIN_MODE = (process.env.LOGIN_MODE || (WA_PHONE ? 'code' : 'qr')).toLowerCase();
@@ -923,8 +1167,9 @@ const clientOptions = {
     authTimeoutMs: 120000,
     webVersion: WA_WEB_VERSION,
     webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html'
+        type: 'local',
+        path: WA_CACHE_DIR,
+        strict: false
     },
     puppeteer: {
         headless: true,
@@ -945,7 +1190,15 @@ const clientOptions = {
             '--disable-translate',
             '--metrics-recording-only',
             '--mute-audio',
-            '--window-size=1280,720'
+            '--window-size=1280,720',
+            // Modo lite 2GB: limita el heap JS de Chrome y desactiva features que comen RAM
+            '--js-flags=--max-old-space-size=460',
+            '--renderer-process-limit=2',
+            '--disable-features=site-per-process,TranslateUI,BlinkGenPropertyTrees',
+            '--disable-component-update',
+            '--disable-client-side-phishing-detection',
+            '--memory-pressure-off',
+            '--disable-hang-monitor'
         ],
         protocolTimeout: 0
     }
@@ -1162,28 +1415,279 @@ client.on('group_join', async (notification) => {
 });
 
 // ==========================================
+// EVENTO: DESPEDIDAS (salidas y expulsiones)
+// ==========================================
+client.on('group_leave', async (notification) => {
+    try {
+        const chat = await notification.getChat();
+        const settings = getGroupSettings(chat.id._serialized);
+
+        if (!isActiveGroup(chat.id._serialized)) return;
+        if (!settings.welcome) return;
+
+        let leftUsers = (notification.recipientIds || [])
+            .map(normalizeContactId)
+            .filter(Boolean);
+
+        if (leftUsers.length === 0) {
+            try {
+                const recipients = await notification.getRecipients();
+                leftUsers = recipients.map(c => c.id._serialized);
+            } catch (e) {}
+        }
+
+        const botNumber = client.info?.wid?.user || '';
+        for (const leftUserId of leftUsers) {
+            // No despedir al propio bot
+            if (botNumber && leftUserId.includes(botNumber)) continue;
+
+            let contactName = leftUserId.split('@')[0];
+            try {
+                const contact = await client.getContactById(leftUserId);
+                contactName = contact.pushname || contact.name || contact.number || contactName;
+            } catch (e) {}
+
+            const farewell = getRandomFarewell(chat.id._serialized, {
+                userTag: leftUserId.split('@')[0],
+                name: contactName,
+                group: chat.name || 'el grupo',
+                count: Math.max((chat.participants?.length || 1) - 1, 0)
+            });
+            await chat.sendMessage(farewell);
+        }
+    } catch (err) {
+        console.error("Error en Despedida:", err);
+    }
+});
+
+// ==========================================
+// FILTRO TEMPRANO — descarta mensajes inútiles sin gastar CPU/RAM
+// (antes de getChat(), que es lo costoso en whatsapp-web.js)
+// ==========================================
+const COMMANDS_ALLOWED_INACTIVE = new Set(['.activarbot', '.desactivarbot', '.botl2', '.activartienda']);
+const recentMsgDedup = new Map();
+
+function isJunkMessage(msg, text) {
+    const remote = msg.id?.remote || msg.from || '';
+    // Estados, canales y broadcasts: nunca procesar
+    if (remote === 'status@broadcast' || remote.endsWith('@newsletter') || remote.endsWith('@broadcast')) return true;
+    // Mensajes gigantes sin sentido como comando
+    if (text.length > 4000) return true;
+    // Duplicado exacto del mismo autor en < 2s (raro pero pasa con clientes buggeados)
+    const dedupKey = `${msg.author || msg.from}|${text.slice(0, 120)}`;
+    const now = Date.now();
+    const last = recentMsgDedup.get(dedupKey);
+    recentMsgDedup.set(dedupKey, now);
+    if (last && now - last < 2000) return true;
+    return false;
+}
+setInterval(() => {
+    const cutoff = Date.now() - 10000;
+    for (const [k, t] of recentMsgDedup.entries()) {
+        if (t < cutoff) recentMsgDedup.delete(k);
+    }
+}, 30 * 1000).unref();
+
+// ==========================================
 // LÓGICA DE MENSAJES Y COMANDOS
 // ==========================================
 client.on('message_create', async msg => {
     try {
         const text = msg.body.trim();
         if (!text.startsWith('.')) return;
+        if (isJunkMessage(msg, text)) return;
 
         const argsArray = text.split(/ +/);
         let command = argsArray.shift().toLowerCase();
         const argsStr = argsArray.join(' ');
-        
+
+        // Grupos inactivos: descartar sin llamar getChat() (ahorro grande de CPU)
+        const remoteId = msg.id?.remote || msg.from || '';
+        if (remoteId.endsWith('@g.us') && !isActiveGroup(remoteId) && !COMMANDS_ALLOWED_INACTIVE.has(command)) {
+            return;
+        }
+
         let chat = await msg.getChat();
         let isGroup = chat.isGroup;
 
         // BOT L2 — panel maestro (funciona siempre, ignora mute y grupos inactivos)
         if (command === '.botl2') {
-            let botL2Sender = '';
-            try {
-                const sender = await msg.getContact();
-                botL2Sender = sender.id.user;
-            } catch (e) {}
+            const botL2Sender = await getSenderNumber(msg);
             return handleBotL2Command(msg, chat, argsArray, botL2Sender);
+        }
+
+        const earlySender = await getSenderNumber(msg);
+
+        // L3 — activar tienda (solo owner, funciona aunque el grupo esté inactivo)
+        if (command === '.activartienda') {
+            if (!isGroup) return msg.reply('❌ Usa este comando en el grupo donde quieres la tienda.');
+            if (!isPrivilegedOwner(earlySender)) return;
+            const s = store.activateStore(chat.id._serialized, chat.name);
+            return msg.reply(
+                `✅ *TIENDA NIVEL 3 ACTIVADA*\n\n` +
+                `🆔 *ID de tienda:* \`${s.id}\`\n` +
+                `📍 Grupo: *${chat.name}*\n\n` +
+                `*En tu chat privado con el bot:*\n` +
+                `1️⃣ *.iden ${s.id}* — vincular tienda\n` +
+                `2️⃣ *.cargar* — menú guiado para agregar stock\n` +
+                `3️⃣ *.tiendaadmin* — panel de comandos\n\n` +
+                `*En el grupo:* *.registro* · *.tienda* · *.saldo* · *.comprar [producto]*`
+            );
+        }
+
+        // L3 — comandos privados del owner (stock / productos)
+        if (!isGroup && isPrivilegedOwner(earlySender)) {
+            if (command === '.iden') {
+                const storeId = (argsArray[0] || '').trim();
+                if (!storeId) {
+                    return msg.reply('⚠️ Uso: *.iden 12345*\n\nEl ID lo obtienes al activar la tienda con *.activartienda* en el grupo.');
+                }
+                const s = store.getStoreById(storeId);
+                if (!s) return msg.reply('❌ ID de tienda no encontrado.');
+                store.setAdminContext(msg.from, storeId);
+                return msg.reply(
+                    `✅ *Vinculado a tienda ${storeId}*\n` +
+                    `📍 ${s.groupName}\n\n` +
+                    `*Carga fácil:*\n` +
+                    `• *.cargar* — menú paso a paso\n` +
+                    `• *.tiendaadmin* — todos los comandos\n\n` +
+                    `_Manual:_ *.setproducto max perfil 10*`
+                );
+            }
+
+            if (command === '.cargar' || command === '.cargastock') {
+                const ctx = store.getAdminContext(msg.from);
+                if (!ctx) {
+                    return msg.reply('⚠️ Primero *.iden [ID]* para elegir la tienda.\n\nEl ID lo obtienes con *.activartienda* en el grupo.');
+                }
+                return msg.reply(storeWizard.startWizard(msg.from, ctx.storeId));
+            }
+
+            if (command === '.agregarservicio' || command === '.nuevoservicio') {
+                const ctx = store.getAdminContext(msg.from);
+                if (!ctx) {
+                    return msg.reply('⚠️ Primero *.iden [ID]* para vincular la tienda.');
+                }
+                return msg.reply(storeWizard.startAddServiceWizard(msg.from, ctx.storeId));
+            }
+
+            if (command === '.servicios' || command === '.miservicios') {
+                const ctx = store.getAdminContext(msg.from);
+                if (!ctx) return msg.reply('⚠️ Primero *.iden [ID]*');
+                return msg.reply(storeWizard.buildServicesList(ctx.storeId));
+            }
+
+            if (command === '.cancelarcarga' || command === '.cancelarstock') {
+                if (storeWizard.hasActiveSession(msg.from)) {
+                    storeWizard.clearSession(msg.from);
+                    return msg.reply('❌ Carga cancelada. Usa *.cargar* cuando quieras continuar.');
+                }
+                return msg.reply('ℹ️ No hay carga en progreso.');
+            }
+
+            if (command === '.tiendaadmin' || command === '.admintienda') {
+                const ctx = store.getAdminContext(msg.from);
+                if (!ctx) {
+                    return msg.reply('⚠️ Primero *.iden [ID]* para vincular la tienda.');
+                }
+                return msg.reply(storeWizard.buildAdminHelp(ctx.storeId));
+            }
+
+            if (command === '.verstock') {
+                const ctx = store.getAdminContext(msg.from);
+                if (!ctx) return msg.reply('⚠️ Primero *.iden [ID]*');
+                const query = argsStr || '';
+                if (!query) {
+                    const products = store.storeData.products[ctx.storeId] || {};
+                    const keys = Object.keys(products);
+                    if (!keys.length) return msg.reply('📭 Sin productos. Usa *.cargar* para empezar.');
+                    let txt = `📦 *STOCK — tienda ${ctx.storeId}*\n\n`;
+                    for (const key of keys) {
+                        const p = products[key];
+                        const count = store.getStockCount(ctx.storeId, key);
+                        txt += `• *${p.name}*: ${count} ${p.unitLabel}(s)\n`;
+                    }
+                    txt += `\n_Detalle:_ *.verstock max*`;
+                    return msg.reply(txt.trim());
+                }
+                const key = store.findProductKey(ctx.storeId, query);
+                if (!key) return msg.reply('❌ Producto no encontrado.');
+                const p = store.storeData.products[ctx.storeId][key];
+                const count = store.getStockCount(ctx.storeId, key);
+                return msg.reply(`📦 *${p.name}*\nDisponible: *${count}* ${p.unitLabel}(s)\nPrecio: $${p.price}`);
+            }
+
+            if (command === '.setproducto') {
+                const ctx = store.getAdminContext(msg.from);
+                if (!ctx) return msg.reply('⚠️ Primero *.iden [ID]* para elegir la tienda.');
+                if (argsArray.length < 3) {
+                    return msg.reply(
+                        '⚠️ Uso:\n' +
+                        '*.setproducto max perfil 10*\n' +
+                        '*.setproducto prime completa 25*'
+                    );
+                }
+                const prodName = argsArray[0];
+                const category = argsArray[1].toLowerCase();
+                const price = parseFloat(argsArray[2]);
+                if (!['perfil', 'completa'].includes(category) || isNaN(price) || price <= 0) {
+                    return msg.reply('⚠️ Categoría: *perfil* o *completa*. Precio numérico positivo.');
+                }
+                const baseKey = store.normalizeProductKey(prodName);
+                const key = category === 'completa' ? `${baseKey}_completa` : baseKey;
+                store.setProduct(ctx.storeId, key, {
+                    name: category === 'completa' ? `${prodName.toUpperCase()} COMPLETA` : prodName.toUpperCase(),
+                    price,
+                    category,
+                    unitLabel: category === 'completa' ? 'cuenta' : 'perfil'
+                });
+                return msg.reply(`✅ Producto *${prodName.toUpperCase()}* (${category}) — $${price}\n🆔 Tienda: \`${ctx.storeId}\``);
+            }
+
+            if (command === '.addstock') {
+                const ctx = store.getAdminContext(msg.from);
+                if (!ctx) return msg.reply('⚠️ Primero *.iden [ID]* para elegir la tienda.');
+                const productName = argsArray[0];
+                if (!productName) {
+                    return msg.reply(
+                        '⚠️ Uso: *.addstock max* + credenciales\n' +
+                        'Una credencial por línea en el mismo mensaje o en mensaje citado.'
+                    );
+                }
+                let lines = [];
+                if (msg.hasQuotedMsg) {
+                    const quoted = await msg.getQuotedMessage();
+                    lines = (quoted.body || '').split('\n');
+                } else {
+                    const bodyLines = text.split('\n');
+                    if (bodyLines.length > 1) {
+                        lines = bodyLines.slice(1);
+                    } else if (argsArray.length > 1) {
+                        lines = argsArray.slice(1).join(' ').split('\n');
+                    }
+                }
+                lines = lines.map(l => l.trim()).filter(Boolean);
+                if (!lines.length) {
+                    return msg.reply('⚠️ No encontré credenciales. Agrega líneas debajo del comando o cita un mensaje con el stock.');
+                }
+                let key = store.findProductKey(ctx.storeId, productName);
+                if (!key) {
+                    return msg.reply(`❌ Producto *${productName}* no existe. Créalo con *.setproducto*`);
+                }
+                const added = store.addStockLines(ctx.storeId, key, lines);
+                const total = store.getStockCount(ctx.storeId, key);
+                return msg.reply(`✅ *+${added}* agregado(s) a *${productName}*\n📦 Stock actual: ${total}`);
+            }
+
+            if (command === '.tiendalist') {
+                const ids = Object.values(store.storeData.stores);
+                if (!ids.length) return msg.reply('📭 No hay tiendas activas.');
+                let txt = '🛍️ *TIENDAS REGISTRADAS*\n\n';
+                for (const s of ids) {
+                    txt += `🆔 \`${s.id}\` — ${s.groupName} ${s.enabled ? '✅' : '❌'}\n`;
+                }
+                return msg.reply(txt.trim());
+            }
         }
 
         // Solo activar/desactivar (único acceso en grupos inactivos)
@@ -1213,44 +1717,29 @@ client.on('message_create', async msg => {
         // Grupos no activados: ignorar absolutamente todo lo demás
         if (isGroup && !isActiveGroup(chat.id._serialized)) return;
         
-        // Verificar si el usuario está muteado
-        if (isGroup) {
-            const contact = await msg.getContact();
-            const muteKey = `${chat.id._serialized}_${contact.id._serialized}`;
-            if (mutedUsers[muteKey]) {
-                if (Date.now() < mutedUsers[muteKey].mutedUntil) {
-                    // Aún está muteado
-                    const timeLeft = mutedUsers[muteKey].mutedUntil - Date.now();
-                    const timeDisplay = timeLeft / 1000 < 60 ? Math.floor(timeLeft / 1000) + 's' :
-                                       timeLeft / 1000 < 3600 ? Math.floor(timeLeft / 60000) + 'm' :
-                                       Math.floor(timeLeft / 3600000) + 'h';
-                    return msg.reply(`🔇 *Estás muteado*\n\n📝 Razón: ${mutedUsers[muteKey].reason}\n⏱️ Tiempo restante: ${timeDisplay}`);
-                } else {
-                    // Ya pasó el tiempo de mute
-                    delete mutedUsers[muteKey];
-                    saveMutedUsers();
-                }
+        // Usuario muteado: borrar su mensaje para todos y no responder nada
+        if (isGroup && !msg.fromMe) {
+            const muteEntry = getActiveMute(chat.id._serialized, msg.author || msg.from);
+            if (muteEntry) {
+                try { await msg.delete(true); } catch (e) {}
+                return;
             }
         }
 
         // VERIFICADOR DE ADMINS (Nivel Dios de Seguridad)
         let isAdmin = false;
-        let isBotAdmin = false; // Nuevo: Verificar si el bot es admin
-        let senderNumber = ''; // Número del remitente
-        
+        let isBotAdmin = false;
+        let senderNumber = earlySender;
+
         if (isGroup) {
             try {
-                const sender = await msg.getContact();
-                senderNumber = sender.id.user; // Número completo
-                const sLast10 = sender.id.user.slice(-10); // Funciona para burlar los 521 o 52 y los @lid
-                
-                // Verificar si el usuario es admin del grupo
+                const sLast10 = senderNumber.slice(-10);
+
                 const participant = chat.participants.find(p => p.id.user.endsWith(sLast10));
                 if (participant && (participant.isAdmin || participant.isSuperAdmin)) {
                     isAdmin = true;
                 }
-                
-                // Verificar si el bot es admin en el grupo
+
                 const botNumber = client.info?.wid?.user;
                 if (botNumber) {
                     const botParticipant = chat.participants.find(p => p.id.user.endsWith(botNumber.slice(-10)));
@@ -1258,14 +1747,15 @@ client.on('message_create', async msg => {
                         isBotAdmin = true;
                     }
                 }
-                
-                // PRIVILEGIO ESPECIAL: número en ADMIN_PRIVILEGIADO (.env)
+
                 if (senderNumber.includes(ADMIN_PRIVILEGIADO)) {
                     isAdmin = true;
                 }
             } catch (e) {
                 console.error("Error validando Admin:", e);
             }
+        } else if (isPrivilegedOwner(senderNumber)) {
+            isAdmin = true;
         }
 
         // --- SISTEMAS DE ADMINISTRACIÓN ---
@@ -1277,11 +1767,17 @@ client.on('message_create', async msg => {
             let textToSend = "";
             let mediaToSend = null;
             let isMediaMessage = false;
+            let quotedMentions = [];
 
             // Prioridad: mensaje respondido > mensaje actual con media > argumento de texto
             if (msg.hasQuotedMsg) {
                 const quotedMsg = await msg.getQuotedMessage();
-                
+                // Conservar las etiquetas del mensaje original para que sigan
+                // siendo menciones reales y no una lista de números sueltos
+                quotedMentions = (quotedMsg.mentionedIds || []).map(m =>
+                    typeof m === 'string' ? m : m?._serialized
+                ).filter(Boolean);
+
                 if (quotedMsg.hasMedia) {
                     const media = await quotedMsg.downloadMedia();
                     if (media) {
@@ -1304,8 +1800,11 @@ client.on('message_create', async msg => {
             } else {
                 textToSend = "(Mensaje del sistema)";
             }
-            
-            let mentions = chat.participants.map(p => p.id._serialized);
+
+            const mentions = [...new Set([
+                ...chat.participants.map(p => p.id._serialized),
+                ...quotedMentions
+            ])];
             const finalMessage = textToSend + getBotBrandFooter();
             
             if (isMediaMessage && mediaToSend) {
@@ -1475,16 +1974,35 @@ client.on('message_create', async msg => {
                 return msg.reply("⚠️ Uso: .mute @usuario 5m (razón) | Ejemplo: .mute @pablito 5m groserías");
             }
             
-            const muteKey = `${chat.id._serialized}_${targetUserId}`;
+            const muteKey = muteKeyFor(chat.id._serialized, targetUserId);
             const mutedUntil = Date.now() + duration;
-            mutedUsers[muteKey] = { mutedUntil, reason };
+            mutedUsers[muteKey] = { mutedUntil, reason, userId: targetUserId };
             saveMutedUsers();
-            
+
+            // Borrar de inmediato el mensaje al que se respondió (si aplica)
+            if (msg.hasQuotedMsg) {
+                try {
+                    const quoted = await msg.getQuotedMessage();
+                    await quoted.delete(true);
+                } catch (e) {}
+            }
+
             const durationDisplay = duration / 1000 < 60 ? Math.floor(duration / 1000) + 's' :
                                    duration / 1000 < 3600 ? Math.floor(duration / 60000) + 'm' :
                                    Math.floor(duration / 3600000) + 'h';
-            
-            return msg.reply(`🔇 *Usuario Muteado*\n\n👤 Usuario: @${targetUserId.split('@')[0]}\n⏱️ Duración: ${durationDisplay}\n📝 Razón: ${reason}`);
+
+            const botAdminNote = isBotAdmin
+                ? `│ 🗑️ Sus mensajes se borrarán automáticamente\n`
+                : `│ ⚠️ Hazme *admin* para poder borrar sus mensajes\n`;
+            return chat.sendMessage(
+                `╭─「 🔇 *USUARIO MUTEADO* 」\n` +
+                `│ 👤 @${targetUserId.split('@')[0]}\n` +
+                `│ ⏱️ Duración: *${durationDisplay}*\n` +
+                `│ 📝 Razón: ${reason}\n` +
+                botAdminNote +
+                `╰──────────⬣`,
+                { mentions: [targetUserId] }
+            );
         }
 
         if (command === '.unmute') {
@@ -1494,13 +2012,19 @@ client.on('message_create', async msg => {
             const targetUserId = await resolveTargetUser(msg);
             if (!targetUserId) return msg.reply("⚠️ Debes mencionar o responder al usuario a desmutear.");
 
-            const muteKey = `${chat.id._serialized}_${targetUserId}`;
+            const muteKey = muteKeyFor(chat.id._serialized, targetUserId);
             if (!mutedUsers[muteKey]) {
                 return msg.reply("ℹ️ Ese usuario no está muteado.");
             }
             delete mutedUsers[muteKey];
             saveMutedUsers();
-            return msg.reply(`🔊 *Usuario Desmuteado*\n\n👤 @${targetUserId.split('@')[0]} ya puede usar comandos.`);
+            return chat.sendMessage(
+                `╭─「 🔊 *USUARIO DESMUTEADO* 」\n` +
+                `│ 👤 @${targetUserId.split('@')[0]}\n` +
+                `│ ✅ Ya puede escribir de nuevo\n` +
+                `╰──────────⬣`,
+                { mentions: [targetUserId] }
+            );
         }
 
         if (command === '.mutelist') {
@@ -1511,13 +2035,17 @@ client.on('message_create', async msg => {
             const entries = Object.entries(mutedUsers).filter(([k]) => k.startsWith(prefix));
             if (entries.length === 0) return msg.reply("✅ No hay usuarios muteados en este grupo.");
 
-            let txt = "🔇 *USUARIOS MUTEADOS*\n\n";
+            let txt = "╭─「 🔇 *USUARIOS MUTEADOS* 」\n";
+            let any = false;
             for (const [key, data] of entries) {
-                const userId = key.slice(prefix.length);
+                const userDigits = (data.userId || key.slice(prefix.length)).split('@')[0];
                 const timeLeft = data.mutedUntil - Date.now();
                 if (timeLeft <= 0) continue;
-                txt += `• @${userId.split('@')[0]} — ${formatDuration(timeLeft)} restante\n  📝 ${data.reason}\n`;
+                any = true;
+                txt += `│ • @${userDigits} — ${formatDuration(timeLeft)} restante\n│   📝 ${data.reason}\n`;
             }
+            txt += "╰──────────⬣";
+            if (!any) return msg.reply("✅ No hay usuarios muteados en este grupo.");
             return msg.reply(txt);
         }
 
@@ -2399,25 +2927,202 @@ client.on('message_create', async msg => {
             }
         }
 
-        // --- ENRUTADOR DE MENÚS (O(1)) ---
+        // --- ENRUTADOR DE MENÚS ---
+        const styledMenus = new Set([
+            '.menuprincipal', '.menu', '.menuadmins', '.menufun',
+            '.menuherramientas', '.menustickers', '.menufreefire'
+        ]);
+        if (styledMenus.has(command)) {
+            const styledReply = await replyStyledMenu(command, msg, chat, isGroup);
+            if (styledReply) return styledReply;
+        }
+
         const menuRouter = {
-            '.menuprincipal': MENU_PRINCIPAL,
-            '.menu': MENU_PRINCIPAL,
-            '.menuadmins': MENU_ADMINS,
             '.menulogos': MENU_LOGOS,
-            '.menufreefire': MENU_FREE_FIRE,
-            '.menustickers': MENU_STICKERS,
             '.menuventas': MENU_VENTAS,
             '.menuventas2': MENU_VENTAS2,
-            '.menufun': MENU_FUN,
             '.menuhot': MENU_HOT,
-            '.menuherramientas': MENU_HERRAMIENTAS,
             '.menugrupo': MENU_GRUPO,
             '.menucomandos': MENU_GRUPO,
         };
 
         if (menuRouter[command]) {
             return msg.reply(menuRouter[command]);
+        }
+
+        // --- TIENDA NIVEL 3 (grupo) ---
+        if (command === '.registro' || command === '.registrarme') {
+            if (!isGroup) return msg.reply('❌ Regístrate en el grupo de la tienda.');
+            const s = store.getStoreByGroupId(chat.id._serialized);
+            if (!s) return msg.reply('❌ No hay tienda activa en este grupo.');
+            const userId = msg.author || msg.from;
+            let displayName = 'Usuario';
+            try {
+                const c = await msg.getContact();
+                displayName = c.pushname || c.name || displayName;
+            } catch (e) {}
+            const result = store.registerUser(s.id, userId, displayName);
+            if (result.already) {
+                return msg.reply(
+                    `ℹ️ *Ya estás registrado*\n\n` +
+                    `👤 ${displayName}\n` +
+                    `💰 Saldo: $${result.user.balance || 0}\n\n` +
+                    `_Compra con_ *.tienda* _y_ *.comprar [producto]*`
+                );
+            }
+            return msg.reply(
+                `✅ *REGISTRO EXITOSO*\n\n` +
+                `👤 Cliente: ${displayName}\n` +
+                `🛍️ Tienda: ${s.groupName}\n\n` +
+                `Ahora puedes:\n` +
+                `• Ver catálogo: *.tienda*\n` +
+                `• Ver saldo: *.saldo*\n` +
+                `• Comprar: *.comprar [producto]*\n\n` +
+                `_Pide recarga de saldo a un admin._`
+            );
+        }
+
+        if (command === '.clientes') {
+            if (!isGroup) return msg.reply('❌ Comando de grupos.');
+            if (!isPrivilegedOwner(senderNumber)) return msg.reply('🚫 Solo el owner.');
+            const s = store.getStoreByGroupId(chat.id._serialized);
+            if (!s) return msg.reply('❌ No hay tienda activa aquí.');
+            const count = store.getRegisteredCount(s.id);
+            return msg.reply(
+                `👥 *CLIENTES REGISTRADOS*\n\n` +
+                `📍 ${s.groupName}\n` +
+                `🆔 Tienda: \`${s.id}\`\n` +
+                `✅ Registrados: *${count}*\n\n` +
+                `_Los datos se guardan por tienda, sin cargar todo en RAM._`
+            );
+        }
+
+        if (command === '.tiendaid') {
+            if (!isGroup) return msg.reply('❌ Comando de grupos.');
+            const s = store.getStoreByGroupId(chat.id._serialized);
+            if (!s) return msg.reply('❌ No hay tienda activa aquí. Owner: *.activartienda*');
+            if (!isPrivilegedOwner(senderNumber)) return msg.reply('🚫 Solo el owner puede ver el ID.');
+            return msg.reply(`🆔 *ID de tienda:* \`${s.id}*\n📍 ${s.groupName}`);
+        }
+
+        if (command === '.tienda') {
+            if (!isGroup) return msg.reply('❌ Comando de grupos.');
+            const s = store.getStoreByGroupId(chat.id._serialized);
+            if (!s) return msg.reply('❌ No hay tienda activa en este grupo.');
+            return msg.reply(store.buildCatalog(s.id));
+        }
+
+        if (command === '.saldo') {
+            const userId = msg.author || msg.from;
+            let displayName = 'Usuario';
+            try {
+                const c = await msg.getContact();
+                displayName = c.pushname || c.name || displayName;
+            } catch (e) {}
+
+            if (isGroup) {
+                const s = store.getStoreByGroupId(chat.id._serialized);
+                if (!s) return msg.reply('❌ No hay tienda activa en este grupo.');
+                if (!store.isRegistered(s.id, userId)) {
+                    return msg.reply('⚠️ No estás registrado.\n\nUsa *.registro* primero.');
+                }
+                const wallet = store.getUserWallet(s.id, userId);
+                store.setUserName(s.id, userId, displayName);
+                return msg.reply(
+                    `💳 *TU SALDO*\n\n` +
+                    `👤 ${displayName}\n` +
+                    `💰 Disponible: $${wallet.balance}\n` +
+                    `📉 Histórico Gastado: $${wallet.spent || 0}`
+                );
+            }
+            return msg.reply('❌ Usa *.saldo* en el grupo donde está la tienda.');
+        }
+
+        if (command === '.cargarsaldo') {
+            if (!isGroup) return msg.reply('❌ Usa este comando en el grupo de la tienda.');
+            if (!isPrivilegedOwner(senderNumber)) return msg.reply('🚫 Solo el owner puede recargar saldo.');
+            const s = store.getStoreByGroupId(chat.id._serialized);
+            if (!s) return msg.reply('❌ No hay tienda activa en este grupo.');
+            const amount = parseFloat(argsArray[0]);
+            if (isNaN(amount) || amount <= 0) {
+                return msg.reply('⚠️ Uso: *.cargarsaldo 100* (como respuesta al cliente o con @mención)');
+            }
+            let targetId = null;
+            let targetName = '';
+            if (msg.hasQuotedMsg) {
+                const quoted = await msg.getQuotedMessage();
+                targetId = quoted.author || quoted.from;
+                try {
+                    const tc = await quoted.getContact();
+                    targetName = tc.pushname || tc.name || '';
+                } catch (e) {}
+            } else if (msg.mentionedIds.length > 0) {
+                targetId = msg.mentionedIds[0];
+            }
+            if (!targetId) {
+                return msg.reply('⚠️ Responde al mensaje del cliente o menciónalo: *.cargarsaldo 100 @user*');
+            }
+            const result = store.addBalance(s.id, targetId, amount, targetName);
+            const mention = targetName ? `@${targetName.split(' ')[0]}` : 'Cliente';
+            return msg.reply(
+                `✅ *Saldo Recargado*\n\n` +
+                `📲 ${mention}\n` +
+                `👤 Cliente: ${targetName || 'Usuario'}\n` +
+                `💰 Anterior: $${result.previous}\n` +
+                `➕ Agregado: $${amount}\n` +
+                `💵 *Nuevo Saldo: $${result.newBalance}*`
+            );
+        }
+
+        if (command === '.comprar') {
+            if (!isGroup) return msg.reply('❌ Las compras se hacen en el grupo de la tienda.');
+            if (!argsStr) return msg.reply('⚠️ Uso: *.comprar max* o *.comprar max completa*');
+            const groupStore = store.getStoreByGroupId(chat.id._serialized);
+            if (!groupStore) return msg.reply('❌ No hay tienda activa en este grupo.');
+            const buyerId = msg.author || msg.from;
+            if (!store.isRegistered(groupStore.id, buyerId)) {
+                return msg.reply('⚠️ Debes registrarte primero:\n*.registro*');
+            }
+            let buyerName = '';
+            try {
+                const c = await msg.getContact();
+                buyerName = c.pushname || c.name || '';
+            } catch (e) {}
+            const result = store.purchase(groupStore.id, buyerId, argsStr, buyerName);
+            if (!result.ok) {
+                if (result.error === 'NOT_REGISTERED') {
+                    return msg.reply('⚠️ Debes registrarte primero:\n*.registro*');
+                }
+                if (result.error === 'NO_STOCK') {
+                    return msg.reply('❌ Sin stock para ese producto. Revisa *.tienda*');
+                }
+                if (result.error === 'INSUFFICIENT') {
+                    return msg.reply(
+                        `❌ Saldo insuficiente.\n\n` +
+                        `💰 Tu saldo: $${result.balance}\n` +
+                        `💳 Precio: $${result.price}\n\n` +
+                        `_Pide recarga a un admin._`
+                    );
+                }
+                return msg.reply('❌ Producto no encontrado. Usa *.tienda* para ver el catálogo.');
+            }
+            await msg.reply(
+                `🎉 *COMPRA EXITOSA*\n\n` +
+                `👤 Cliente: ${buyerName || 'Usuario'}\n` +
+                `🛒 Producto: 1x ${result.product.name}\n` +
+                `💳 Costo: $${result.product.price}\n` +
+                `💰 Saldo restante: $${result.remaining}`
+            );
+            try {
+                await client.sendMessage(
+                    buyerId,
+                    result.deliveryText + getBotBrandFooter()
+                );
+            } catch (e) {
+                console.error('Entrega DM tienda:', e);
+                await msg.reply('⚠️ Compra OK pero no pude enviarte el producto por privado. Escríbeme al bot en DM.');
+            }
+            return;
         }
 
         // --- OWNER: nuevoset / eliminarset ---
@@ -2432,6 +3137,16 @@ client.on('message_create', async msg => {
 
             if (isMenuCommand(cmdName) || customCommands[cmdName]) {
                 return msg.reply(`⚠️ El comando .${cmdName} ya existe.`);
+            }
+
+            // Aislado por grupo: no aparece en otros grupos
+            if (isGroup) {
+                const gid = chat.id._serialized;
+                if (groupCommands.hasGroupCommand(gid, cmdName)) {
+                    return msg.reply(`⚠️ El comando .${cmdName} ya existe en este grupo.`);
+                }
+                groupCommands.setGroupCommand(gid, cmdName, { text: "", image: null, mimetype: null });
+                return msg.reply(`✅ *Comando .${cmdName} creado (solo este grupo)*\n\nConfigúralo con: *.set${cmdName} tu contenido*\nO responde una imagen/sticker con *.set${cmdName}*`);
             }
 
             grupoExtras.push(cmdName);
@@ -2449,6 +3164,11 @@ client.on('message_create', async msg => {
 
             const cmdName = argsStr.toLowerCase().replace(/[^a-z0-9]/g, '');
             if (!cmdName) return msg.reply("⚠️ Nombre inválido.");
+
+            // Primero: comandos aislados de este grupo
+            if (isGroup && groupCommands.deleteGroupCommand(chat.id._serialized, cmdName)) {
+                return msg.reply(`🗑️ *Comando .${cmdName} eliminado* de este grupo.`);
+            }
 
             if (!isMenuCommand(cmdName) && !customCommands[cmdName]) {
                 return msg.reply(`⚠️ El comando .${cmdName} no existe.`);
@@ -2477,7 +3197,17 @@ client.on('message_create', async msg => {
             if (reservedCommands.has(cmdName)) {
                 return msg.reply(`⚠️ El comando .${cmdName} ya existe en el bot.`);
             }
-            
+
+            // En grupos: aislado por grupo (no se mezcla con otros grupos)
+            if (isGroup) {
+                const gid = chat.id._serialized;
+                if (groupCommands.hasGroupCommand(gid, cmdName)) {
+                    return msg.reply(`⚠️ El comando .${cmdName} ya fue creado en este grupo.`);
+                }
+                groupCommands.setGroupCommand(gid, cmdName, { text: "", image: null, mimetype: null });
+                return msg.reply(`✅ *Comando .${cmdName} creado (solo este grupo)*\n\nAhora usa: *.set${cmdName} tu contenido* para guardar información.\nO responde una imagen con *.set${cmdName}* para guardar con imagen.`);
+            }
+
             if (customCommands[cmdName]) {
                 return msg.reply(`⚠️ El comando personalizado .${cmdName} ya fue creado.`);
             }
@@ -2522,6 +3252,18 @@ client.on('message_create', async msg => {
                 }
             }
             
+            // Comando aislado del grupo (prioridad sobre los globales)
+            if (isGroup && groupCommands.hasGroupCommand(chat.id._serialized, cmdName)) {
+                const gid = chat.id._serialized;
+                const prev = groupCommands.getGroupCommand(gid, cmdName);
+                groupCommands.setGroupCommand(gid, cmdName, {
+                    text: argsStr || prev.text,
+                    image: imagenBase64 || prev.image,
+                    mimetype: mimeType || prev.mimetype
+                });
+                return msg.reply(`✅ Comando .${cmdName} actualizado${imagenBase64 ? ' con imagen' : ''} (solo este grupo).`);
+            }
+
             // Verificar si es un comando personalizado (creado con .create)
             if (customCommands[cmdName]) {
                 customCommands[cmdName] = {
@@ -2546,8 +3288,17 @@ client.on('message_create', async msg => {
             return msg.reply(`⚠️ El comando .${cmdName} no existe.\n\nOpciones:\n1. *.nuevoset ${cmdName}* (comando de grupo)\n2. *.create ${cmdName}* (personalizado)\n3. O usa uno del menú: ${MENU_COMMAND_NAMES.slice(0, 5).map(c => '.set' + c).join(', ')}...`);
         }
 
-        // Comandos personalizados
+        // Comandos personalizados — primero los del grupo (aislados), luego globales
         const customName = command.substring(1);
+        if (isGroup) {
+            const groupCmd = groupCommands.getGroupCommand(chat.id._serialized, customName);
+            if (groupCmd) {
+                const cmdData = hasCommandContent(groupCmd)
+                    ? groupCmd
+                    : { text: buildDefaultCustomText(customName), image: groupCmd.image || null, mimetype: groupCmd.mimetype || null };
+                return sendMenuCommandResponse(customName, cmdData, chat, msg);
+            }
+        }
         if (customCommands[customName]) {
             const cmdData = resolveCustomCommandData(customName);
             return sendMenuCommandResponse(customName, cmdData, chat, msg);
@@ -2591,8 +3342,29 @@ client.on('message_create', async msg => {
         const text = (msg.body || '').trim();
         if (!text || msg.fromMe) return;
 
+        // Filtro temprano: sin getChat() para chats que no nos interesan
+        const remoteId = msg.id?.remote || msg.from || '';
+        if (remoteId === 'status@broadcast' || remoteId.endsWith('@newsletter') || remoteId.endsWith('@broadcast')) return;
+        // Grupos inactivos: este handler solo actúa en grupos activos o wizard privado
+        if (remoteId.endsWith('@g.us') && !isActiveGroup(remoteId)) return;
+
         const chat = await msg.getChat();
+
+        if (!chat.isGroup && !text.startsWith('.')) {
+            const senderNum = await getSenderNumber(msg);
+            if (isPrivilegedOwner(senderNum) && storeWizard.hasActiveSession(msg.from)) {
+                const reply = storeWizard.handleWizardInput(msg.from, text, store);
+                if (reply) return msg.reply(reply);
+            }
+        }
+
         if (!chat.isGroup || !isActiveGroup(chat.id._serialized)) return;
+
+        // Usuario muteado: borrar TODO lo que escriba (texto, fotos, stickers...)
+        if (getActiveMute(chat.id._serialized, msg.author || msg.from)) {
+            try { await msg.delete(true); } catch (e) {}
+            return;
+        }
 
         const senderNumber = (await msg.getContact()).id?.user || '';
         const isAdmin = await checkIsAdmin(msg, chat, true, senderNumber);
@@ -2644,6 +3416,7 @@ const MAX_INIT_RETRIES = 3;
 
 async function startBot() {
     console.log('⏳ Iniciando bot... (en PCs lentas WhatsApp Web puede tardar varios minutos)');
+    await ensureWaVersionCache(WA_CACHE_DIR, WA_WEB_VERSION);
     try {
         await client.initialize();
     } catch (err) {
@@ -2662,7 +3435,7 @@ async function startBot() {
         console.log('\n💡 Si sigue fallando, prueba:');
         console.log('   1. Verificar conexión a internet');
         console.log('   2. Cerrar otros Chrome/Chromium abiertos');
-        console.log('   3. rm -rf .wwebjs_cache && node index.js');
+        console.log('   3. No borres .wwebjs_cache salvo que te lo indiquen (guarda la versión de WA Web)');
         console.log('   4. Si la sesión está corrupta: rm -rf .wwebjs_auth (tendrás que escanear QR de nuevo)\n');
         process.exit(1);
     }
@@ -2671,17 +3444,74 @@ async function startBot() {
 startBot();
 
 // ==========================================
-// ESCUDO ANTI-CRASH (Inmortalidad del Proceso)
+// LIMPIEZA PERIÓDICA DE tmp/ (descargas .play/.yt huérfanas)
 // ==========================================
+sweepTmpDir();
+setInterval(() => sweepTmpDir(), 60 * 60 * 1000).unref();
+
+// ==========================================
+// APAGADO LIMPIO (systemd stop / Ctrl+C)
+// ==========================================
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try { console.log(`\n🛑 ${signal} recibido — apagando limpio...`); } catch (e) {}
+    try { store.flushAll(); } catch (e) {}
+    try { groupCommands.flushAll(); } catch (e) {}
+    try {
+        await Promise.race([
+            client.destroy(),
+            new Promise(r => setTimeout(r, 10000))
+        ]);
+    } catch (e) {}
+    try { console.log('👋 Bot apagado correctamente.'); } catch (e) {}
+    process.exit(0);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// ==========================================
+// REINICIO DIARIO OPCIONAL (libera RAM de Chrome en VPS pequeños)
+// systemd (Restart=always) vuelve a levantar el proceso
+// ==========================================
+const DAILY_RESTART_HOUR = process.env.DAILY_RESTART_HOUR !== undefined && process.env.DAILY_RESTART_HOUR !== ''
+    ? parseInt(process.env.DAILY_RESTART_HOUR, 10)
+    : null;
+if (DAILY_RESTART_HOUR !== null && DAILY_RESTART_HOUR >= 0 && DAILY_RESTART_HOUR <= 23) {
+    setInterval(() => {
+        const now = new Date();
+        const uptimeH = (Date.now() - BOT_START_TIME) / 3600000;
+        if (now.getHours() === DAILY_RESTART_HOUR && uptimeH > 1) {
+            console.log(`♻️ Reinicio programado (${DAILY_RESTART_HOUR}:00) — systemd relanzará el bot.`);
+            gracefulShutdown('DAILY_RESTART');
+        }
+    }, 5 * 60 * 1000).unref();
+    console.log(`♻️ Reinicio diario programado a las ${DAILY_RESTART_HOUR}:00`);
+}
+
+// ==========================================
+// ESCUDO ANTI-CRASH (con salida limpia en errores irrecuperables)
+// ==========================================
+let puppeteerErrorCount = 0;
 process.on('uncaughtException', (err) => {
-    console.error('🔥 Error crítico interceptado (El bot no morirá):', err);
+    // EPIPE en stdout/stderr: si logueamos aquí se genera otro EPIPE → bucle infinito de CPU.
+    if (err && (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED' || err.code === 'ERR_STREAM_WRITE_AFTER_END')) return;
+    try { console.error('🔥 Error crítico interceptado:', err); } catch (e) {}
 });
 process.on('unhandledRejection', (reason) => {
     const msg = reason?.message || String(reason);
-    if (msg.includes('Page.navigate timed out') || msg.includes('ProtocolError')) {
-        console.error('🔥 Error de conexión Puppeteer:', msg);
-        console.log('💡 Reinicia el bot. Si persiste: rm -rf .wwebjs_cache');
+    if (msg.includes('Page.navigate timed out') || msg.includes('ProtocolError') || msg.includes('Session closed') || msg.includes('Target closed')) {
+        puppeteerErrorCount++;
+        console.error(`🔥 Error Puppeteer (${puppeteerErrorCount}/10):`, msg);
+        // Chrome roto de forma persistente: mejor reiniciar limpio (systemd relanza)
+        if (puppeteerErrorCount >= 10) {
+            console.error('💀 Demasiados errores de Puppeteer — reiniciando proceso...');
+            gracefulShutdown('PUPPETEER_FATAL');
+        }
         return;
     }
     console.error('🔥 Promesa fallida interceptada:', reason);
 });
+// Resetear contador cada hora si el bot va bien
+setInterval(() => { puppeteerErrorCount = 0; }, 60 * 60 * 1000).unref();
