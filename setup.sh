@@ -5,7 +5,7 @@ echo "========================================================"
 echo "  INSTALADOR AWS UBUNTU — BOT WHATSAPP"
 echo "========================================================"
 
-echo "[1/6] Paquetes del sistema..."
+echo "[1/7] Paquetes del sistema..."
 sudo apt update -y
 
 # Ubuntu 24.04+ renombró varios paquetes a variantes *t64
@@ -39,20 +39,29 @@ if ! command -v node &>/dev/null || [[ $(node -v | cut -d. -f1 | tr -d v) -lt 18
     sudo apt install -y nodejs
 fi
 
-echo "[2/6] yt-dlp + EJS (para .play / .yt)..."
+echo "[2/7] yt-dlp + EJS + PO Token (para .play / .yt)..."
 python3 -m pip install -U pip --break-system-packages 2>/dev/null || python3 -m pip install -U pip
-python3 -m pip install -U yt-dlp yt-dlp-ejs --break-system-packages 2>/dev/null || python3 -m pip install -U yt-dlp yt-dlp-ejs
+python3 -m pip install -U yt-dlp yt-dlp-ejs bgutil-ytdlp-pot-provider --break-system-packages 2>/dev/null \
+    || python3 -m pip install -U yt-dlp yt-dlp-ejs bgutil-ytdlp-pot-provider
 
-echo "[3/6] Dependencias npm..."
+echo "[3/7] Bypass YouTube en VPS (WARP + PO Token)..."
+if [ -f "deploy/setup-youtube-bypass.sh" ]; then
+    chmod +x deploy/setup-youtube-bypass.sh
+    ./deploy/setup-youtube-bypass.sh || echo "[AVISO] Bypass YouTube falló — .play puede no funcionar en VPS hasta ejecutar: ./deploy/setup-youtube-bypass.sh"
+else
+    echo "[AVISO] deploy/setup-youtube-bypass.sh no encontrado."
+fi
+
+echo "[4/7] Dependencias npm..."
 npm install
 
-echo "[4/6] Chrome Puppeteer..."
+echo "[5/7] Chrome Puppeteer..."
 npx puppeteer browsers install chrome || {
     echo "[ERROR] Falló instalación de Chrome. Reintenta: npx puppeteer browsers install chrome"
     exit 1
 }
 
-echo "[5/6] Configuración..."
+echo "[6/7] Configuración..."
 if [ ! -f ".env" ] && [ -f ".env.example" ]; then
     cp .env.example .env
     echo "[INFO] Creado .env — edítalo antes de producción."
@@ -61,7 +70,7 @@ fi
 chmod +x start.sh 2>/dev/null || true
 mkdir -p tmp data/cache data
 
-echo "[6/6] Swap (recomendado en VPS de 2GB)..."
+echo "[7/7] Swap (recomendado en VPS de 2GB)..."
 TOTAL_RAM_MB=$(free -m | awk '/^Mem:/{print $2}')
 HAS_SWAP=$(free -m | awk '/^Swap:/{print $2}')
 if [ "$TOTAL_RAM_MB" -le 2500 ] && [ "$HAS_SWAP" -eq 0 ]; then

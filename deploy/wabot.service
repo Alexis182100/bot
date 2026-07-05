@@ -1,6 +1,6 @@
 [Unit]
 Description=Infinity WhatsApp Bot (1 bot por servidor)
-After=network-online.target
+After=network-online.target ytdlp-pot.service
 Wants=network-online.target
 
 [Service]
