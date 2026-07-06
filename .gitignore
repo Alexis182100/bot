@@ -44,3 +44,4 @@ storedata.json
 storedata.json.bak
 data/store/
 data/groups/
+data/pending-requests.json

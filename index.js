@@ -52,6 +52,7 @@ const store = require('./lib/store');
 const storeWizard = require('./lib/store-load-wizard');
 const groupCommands = require('./lib/group-commands');
 const { resolveMenuImageB64 } = require('./lib/menu-sticker');
+const approvalQueue = require('./lib/approval-queue');
 const { getRandomFarewell } = require('./lib/welcome-texts');
 
 loadEnv();
@@ -374,6 +375,9 @@ function getBotL2Panel() {
 │ *.botl2 menupreview*
 │   Vista previa del menú principal
 │
+│ *.botl2 reporte*
+│   Estadísticas: grupos activos, tiendas, pendientes
+│
 │ *.botl2 salir*
 │   Cerrar la sesión del panel
 *╰────────────────────╯*`;
@@ -497,6 +501,217 @@ async function applySavedBotProfile(silent) {
 
 function isPrivilegedOwner(senderNumber) {
     return Boolean(senderNumber && senderNumber.includes(ADMIN_PRIVILEGIADO));
+}
+
+function getBotPhoneNumber() {
+    return process.env.WA_PHONE || client.info?.wid?.user || 'desconocido';
+}
+
+function getPrivilegedOwnerJid() {
+    const digits = String(ADMIN_PRIVILEGIADO).replace(/\D/g, '');
+    return `${digits}@c.us`;
+}
+
+function isPhoneInChat(chat, phoneDigits) {
+    const last10 = String(phoneDigits || '').replace(/\D/g, '').slice(-10);
+    if (!last10 || !chat?.participants) return false;
+    return chat.participants.some(p => p.id.user.endsWith(last10));
+}
+
+async function getGroupInviteUrl(chat) {
+    try {
+        if (!await isChatBotAdmin(chat)) return null;
+        const code = await chat.getInviteCode();
+        return code ? `https://chat.whatsapp.com/${code}` : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+async function notifyPrivilegedOwner(text) {
+    try {
+        await client.sendMessage(getPrivilegedOwnerJid(), text);
+        return true;
+    } catch (e) {
+        console.error('notifyPrivilegedOwner:', e.message);
+        return false;
+    }
+}
+
+async function getRequesterDisplayName(msg) {
+    try {
+        const c = await msg.getContact();
+        return c.pushname || c.name || c.number || 'Admin';
+    } catch (e) {
+        return 'Admin';
+    }
+}
+
+function buildFleetReportText() {
+    const stores = store.listEnabledStores();
+    return approvalQueue.buildFleetReport({
+        botPhone: getBotPhoneNumber(),
+        activeGroupCount: activeGroups.length,
+        storeCount: stores.length,
+        pendingCount: approvalQueue.listPending().length,
+        stores: stores.map(s => ({ id: s.id, groupName: s.groupName }))
+    });
+}
+
+async function sendFleetReportToOwner(reason) {
+    const prefix = reason ? `🔔 _${reason}_\n\n` : '';
+    return notifyPrivilegedOwner(prefix + buildFleetReportText());
+}
+
+async function submitActivationRequest(msg, chat, senderNumber, type) {
+    const ownerInGroup = isPhoneInChat(chat, ADMIN_PRIVILEGIADO);
+    const inviteLink = ownerInGroup ? null : await getGroupInviteUrl(chat);
+    const requesterName = await getRequesterDisplayName(msg);
+
+    const { duplicate, request } = approvalQueue.createRequest({
+        type,
+        groupId: chat.id._serialized,
+        groupName: chat.name,
+        requester: senderNumber,
+        requesterName,
+        ownerInGroup,
+        inviteLink,
+        botPhone: getBotPhoneNumber()
+    });
+
+    if (duplicate) {
+        return msg.reply(
+            `⏳ Ya hay una petición pendiente (*${request.id}*) para ${type === 'store' ? 'la tienda' : 'el bot'} en este grupo.`
+        );
+    }
+
+    const notified = await notifyPrivilegedOwner(approvalQueue.buildOwnerNotification(request));
+    const typeWord = type === 'store' ? 'tienda' : 'bot';
+    return msg.reply(
+        `📨 *Petición de ${typeWord} enviada*\n\n` +
+        `🆔 ID: \`${request.id}\`\n` +
+        `El dueño del sistema debe aprobar en privado:\n` +
+        `*.aprobar ${request.id}* · *.rechazar ${request.id}*\n\n` +
+        (notified ? '✅ Dueño notificado.' : '⚠️ No pude notificar al dueño por privado.')
+    );
+}
+
+async function notifyOwnerActivation(type, chat, senderNumber, requesterName) {
+    const label = type === 'store' ? '🛍️ Tienda activada' : '🤖 Bot activado';
+    const ownerInGroup = isPhoneInChat(chat, ADMIN_PRIVILEGIADO);
+    let txt =
+        `📢 *${label}*\n\n` +
+        `📍 Grupo: *${chat.name}*\n` +
+        `👤 Por: *${requesterName || senderNumber}*\n` +
+        `🤖 Bot: \`${getBotPhoneNumber()}\`\n` +
+        `👁️ Tú en el grupo: ${ownerInGroup ? '✅ Sí' : '❌ No'}`;
+    if (!ownerInGroup) {
+        const link = await getGroupInviteUrl(chat);
+        if (link) txt += `\n\n🔗 ${link}`;
+    }
+    await notifyPrivilegedOwner(txt);
+}
+
+async function processActivationApproval(msg, id, approve) {
+    const request = approvalQueue.getRequest(id);
+    if (!request || request.status !== 'pending') {
+        return msg.reply('❌ Petición no encontrada o ya resuelta. Usa *.pendientes*');
+    }
+
+    approvalQueue.setRequestStatus(id, approve ? 'approved' : 'rejected');
+
+    let groupChat;
+    try {
+        groupChat = await client.getChatById(request.groupId);
+    } catch (e) {
+        return msg.reply(`⚠️ Petición ${approve ? 'aprobada' : 'rechazada'} en sistema, pero no pude avisar al grupo.`);
+    }
+
+    if (approve) {
+        if (request.type === 'bot') {
+            if (!isActiveGroup(request.groupId)) {
+                activeGroups.push(request.groupId);
+                saveGroups();
+            }
+            await groupChat.sendMessage('🟢 *Bot activado* — aprobado por el dueño del sistema.');
+        } else {
+            const s = store.activateStore(request.groupId, request.groupName);
+            await groupChat.sendMessage(
+                `✅ *TIENDA APROBADA*\n\n` +
+                `🆔 ID: \`${s.id}\`\n` +
+                `*.registro* · *.tienda* · *.comprar [producto]*`
+            );
+        }
+        return msg.reply(`✅ *Aprobado* \`${id}\` — ${request.groupName}`);
+    }
+
+    await groupChat.sendMessage('❌ La solicitud fue *rechazada* por el dueño del sistema.');
+    return msg.reply(`❌ *Rechazado* \`${id}\` — ${request.groupName}`);
+}
+
+async function handleOwnerControlCommands(msg, command, argsArray, senderNumber) {
+    if (!isPrivilegedOwner(senderNumber)) return false;
+
+    if (command === '.aprobar' || command === '.aceptar') {
+        const id = (argsArray[0] || '').trim().toUpperCase();
+        if (!id) return msg.reply('⚠️ Uso: *.aprobar [ID]* — ver *.pendientes*');
+        await processActivationApproval(msg, id, true);
+        return true;
+    }
+    if (command === '.rechazar' || command === '.denegar') {
+        const id = (argsArray[0] || '').trim().toUpperCase();
+        if (!id) return msg.reply('⚠️ Uso: *.rechazar [ID]*');
+        await processActivationApproval(msg, id, false);
+        return true;
+    }
+    if (command === '.pendientes') {
+        const pending = approvalQueue.listPending();
+        if (!pending.length) {
+            await msg.reply('✅ Sin peticiones pendientes.');
+            return true;
+        }
+        let txt = '⏳ *PETICIONES PENDIENTES*\n\n';
+        for (const r of pending) {
+            const label = r.type === 'store' ? '🛍️ Tienda' : '🤖 Bot';
+            txt += `*${r.id}* — ${label}\n📍 ${r.groupName}\n👤 ${r.requesterName}\n\n`;
+        }
+        txt += '_*.aprobar ID* · *.rechazar ID*_';
+        await msg.reply(txt.trim());
+        return true;
+    }
+    if (command === '.reporte' || command === '.estadisticas' || command === '.stats') {
+        await msg.reply(buildFleetReportText());
+        return true;
+    }
+    return false;
+}
+
+async function activateStoreInGroup(msg, chat, senderNumber) {
+    if (store.getStoreByGroupId(chat.id._serialized)) {
+        return msg.reply('⚠️ Este grupo ya tiene tienda activa.');
+    }
+
+    const requesterName = await getRequesterDisplayName(msg);
+    const ownerInGroup = isPhoneInChat(chat, ADMIN_PRIVILEGIADO);
+
+    if (!ownerInGroup && !isPrivilegedOwner(senderNumber)) {
+        return submitActivationRequest(msg, chat, senderNumber, 'store');
+    }
+
+    const s = store.activateStore(chat.id._serialized, chat.name);
+    if (!isPrivilegedOwner(senderNumber)) {
+        await notifyOwnerActivation('store', chat, senderNumber, requesterName);
+    }
+    return msg.reply(
+        `✅ *TIENDA NIVEL 3 ACTIVADA*\n\n` +
+        `🆔 *ID de tienda:* \`${s.id}\`\n` +
+        `📍 Grupo: *${chat.name}*\n\n` +
+        `*En tu chat privado con el bot:*\n` +
+        `1️⃣ *.iden ${s.id}* — vincular tienda\n` +
+        `2️⃣ *.cargar* — menú guiado para agregar stock\n` +
+        `3️⃣ *.tiendaadmin* — panel de comandos\n\n` +
+        `*En el grupo:* *.registro* · *.tienda* · *.saldo* · *.comprar [producto]*`
+    );
 }
 
 async function getSenderNumber(msg) {
@@ -779,6 +994,10 @@ async function handleBotL2Command(msg, chat, argsArray, senderNumber) {
         return msg.reply('✅ *Imagen del menú restablecida.* Se usará la tarjeta auto-generada.');
     }
 
+    if (sub === 'reporte' || sub === 'stats' || sub === 'estadisticas') {
+        return msg.reply(buildFleetReportText());
+    }
+
     if (sub === 'menupreview' || sub === 'preview') {
         let userName = 'Preview';
         try {
@@ -933,7 +1152,7 @@ function getWarnsForUser(groupId, userId) {
     return warnsData[groupId][userId];
 }
 
-const INACTIVE_GROUP_COMMANDS = new Set(['.activarbot', '.desactivarbot']);
+const INACTIVE_GROUP_COMMANDS = new Set(['.activarbot', '.desactivarbot', '.solicitartienda']);
 
 async function resolveGroupAdmin(msg, chat) {
     try {
@@ -1405,6 +1624,18 @@ client.on('ready', async () => {
             console.error('Error aplicando perfil BOT L2:', e);
         }
     }
+
+    setTimeout(() => {
+        sendFleetReportToOwner('Bot conectado').catch(e => console.error('Reporte inicio:', e.message));
+    }, 15000);
+
+    const fleetReportHours = parseInt(process.env.FLEET_REPORT_HOURS, 10);
+    if (fleetReportHours > 0) {
+        setInterval(() => {
+            sendFleetReportToOwner('Reporte programado').catch(e => console.error('Reporte programado:', e.message));
+        }, fleetReportHours * 60 * 60 * 1000).unref();
+        console.log(`📊 Reporte al dueño cada ${fleetReportHours}h`);
+    }
 });
 
 // Cachear fotos ver-una-vez solo en grupos activados
@@ -1503,7 +1734,7 @@ client.on('group_leave', async (notification) => {
 // FILTRO TEMPRANO — descarta mensajes inútiles sin gastar CPU/RAM
 // (antes de getChat(), que es lo costoso en whatsapp-web.js)
 // ==========================================
-const COMMANDS_ALLOWED_INACTIVE = new Set(['.activarbot', '.desactivarbot', '.botl2', '.activartienda']);
+const COMMANDS_ALLOWED_INACTIVE = new Set(['.activarbot', '.desactivarbot', '.botl2', '.activartienda', '.solicitartienda']);
 const recentMsgDedup = new Map();
 
 function isJunkMessage(msg, text) {
@@ -1557,21 +1788,16 @@ client.on('message_create', async msg => {
 
         const earlySender = await getSenderNumber(msg);
 
-        // L3 — activar tienda (solo owner, funciona aunque el grupo esté inactivo)
-        if (command === '.activartienda') {
+        if (await handleOwnerControlCommands(msg, command, argsArray, earlySender)) return;
+
+        // L3 — activar tienda (admins del grupo; aprobación si el dueño no está en el grupo)
+        if (command === '.activartienda' || command === '.solicitartienda') {
             if (!isGroup) return msg.reply('❌ Usa este comando en el grupo donde quieres la tienda.');
-            if (!isPrivilegedOwner(earlySender)) return;
-            const s = store.activateStore(chat.id._serialized, chat.name);
-            return msg.reply(
-                `✅ *TIENDA NIVEL 3 ACTIVADA*\n\n` +
-                `🆔 *ID de tienda:* \`${s.id}\`\n` +
-                `📍 Grupo: *${chat.name}*\n\n` +
-                `*En tu chat privado con el bot:*\n` +
-                `1️⃣ *.iden ${s.id}* — vincular tienda\n` +
-                `2️⃣ *.cargar* — menú guiado para agregar stock\n` +
-                `3️⃣ *.tiendaadmin* — panel de comandos\n\n` +
-                `*En el grupo:* *.registro* · *.tienda* · *.saldo* · *.comprar [producto]*`
-            );
+            const isAdmin = await resolveGroupAdmin(msg, chat);
+            if (!isAdmin && !isPrivilegedOwner(earlySender)) {
+                return msg.reply('🚫 Solo los administradores del grupo pueden solicitar la tienda.');
+            }
+            return activateStoreInGroup(msg, chat, earlySender);
         }
 
         // L3 — comandos privados del owner (stock / productos)
@@ -1773,12 +1999,20 @@ client.on('message_create', async msg => {
             const isAdmin = await resolveGroupAdmin(msg, chat);
             if (command === '.activarbot') {
                 if (!isAdmin) return msg.reply("🚫 Solo los administradores pueden activar el Bot.");
-                if (!isActiveGroup(chat.id._serialized)) {
+                if (isActiveGroup(chat.id._serialized)) {
+                    return msg.reply("⚠️ El bot ya estaba activo aquí.");
+                }
+                const ownerInGroup = isPhoneInChat(chat, ADMIN_PRIVILEGIADO);
+                if (isPrivilegedOwner(earlySender) || ownerInGroup) {
                     activeGroups.push(chat.id._serialized);
                     saveGroups();
+                    if (!isPrivilegedOwner(earlySender)) {
+                        const requesterName = await getRequesterDisplayName(msg);
+                        await notifyOwnerActivation('bot', chat, earlySender, requesterName);
+                    }
                     return msg.reply("🟢 *Bot Activado exitosamente en este grupo.*\nEstoy a su servicio, mi señor.");
                 }
-                return msg.reply("⚠️ El bot ya estaba activo aquí.");
+                return submitActivationRequest(msg, chat, earlySender, 'bot');
             }
             if (command === '.desactivarbot') {
                 if (!isAdmin) return msg.reply("🚫 Solo los administradores pueden desactivar el Bot.");
