@@ -44,13 +44,14 @@ const {
     buildHerramientasMenu,
     buildStickersMenu,
     buildFreeFireMenu,
-    DEFAULT_STYLE
+    DEFAULT_STYLE,
+    SYSTEM_CREATOR
 } = require('./lib/menu-builder');
 const { ensureWaVersionCache } = require('./lib/wa-version-cache');
 const store = require('./lib/store');
 const storeWizard = require('./lib/store-load-wizard');
 const groupCommands = require('./lib/group-commands');
-const { getMenuStickerB64 } = require('./lib/menu-sticker');
+const { resolveMenuImageB64 } = require('./lib/menu-sticker');
 const { getRandomFarewell } = require('./lib/welcome-texts');
 
 loadEnv();
@@ -358,10 +359,17 @@ function getBotL2Panel() {
 │ *.botl2 emoji bullet 💜*
 │ *.botl2 emoji badge 🎀*
 │ *.botl2 emoji welcome ☀️*
+│ *.botl2 emoji border ⬣*
 │   Personaliza emojis del menú
 │
 │ *.botl2 firma [texto/off/reset]*
 │   Pie de los mensajes de .n y entregas
+│
+│ *.botl2 menuimagen*
+│   Imagen del menú (responde a una imagen o envíala con el comando)
+│
+│ *.botl2 quitarmenuimagen*
+│   Volver a la imagen auto-generada del menú
 │
 │ *.botl2 menupreview*
 │   Vista previa del menú principal
@@ -376,6 +384,8 @@ let botProfile = {
     status: null,
     profilePhoto: null,
     hasCustomPhoto: false,
+    menuImage: null,
+    hasCustomMenuImage: false,
     autoApplyOnStart: true,
     history: []
 };
@@ -444,6 +454,8 @@ async function getBotProfileInfoText() {
         `📝 Estado guardado: _${botProfile.status || '(sin configurar)'}_\n` +
         `📛 Nombre guardado: _${botProfile.displayName || '(sin configurar)'}_\n` +
         `🖼️ Foto personalizada: ${botProfile.hasCustomPhoto ? '✅' : '❌'}\n` +
+        `🖼️ Imagen del menú: ${botProfile.hasCustomMenuImage ? '✅ Personalizada' : '♾️ Auto-generada'}\n` +
+        `🔒 Creador (fijo): *${SYSTEM_CREATOR}*\n` +
         `🔄 Auto-aplicar al inicio: ${botProfile.autoApplyOnStart ? '✅' : '❌'}\n` +
         `🆔 ID: \`${wid}\`\n` +
         `📱 Número: \`${info?.wid?.user || 'N/A'}\``
@@ -518,9 +530,9 @@ async function replyStyledMenu(command, msg, chat, isGroup) {
 
         // Imagen + menú en un solo mensaje (caption), no sticker aparte
         try {
-            const imgB64 = await getMenuStickerB64(client.pupBrowser, getBotDisplayName(), style.creator);
-            if (imgB64) {
-                const media = new MessageMedia('image/png', imgB64, 'menu.png');
+            const img = await resolveMenuImageB64(botProfile, client.pupBrowser, getBotDisplayName(), style.creator);
+            if (img) {
+                const media = new MessageMedia(img.mimetype, img.b64, 'menu.png');
                 return chat.sendMessage(media, { caption: menuText });
             }
         } catch (e) {}
@@ -688,14 +700,16 @@ async function handleBotL2Command(msg, chat, argsArray, senderNumber) {
                 `⚠️ Uso:\n` +
                 `*.botl2 emoji bullet 💜*\n` +
                 `*.botl2 emoji badge 🎀*\n` +
-                `*.botl2 emoji welcome ☀️*`
+                `*.botl2 emoji welcome ☀️*\n` +
+                `*.botl2 emoji border ⬣*`
             );
         }
         if (!botProfile.menuStyle) botProfile.menuStyle = {};
         if (part === 'bullet') botProfile.menuStyle.bullet = val;
         else if (part === 'badge') botProfile.menuStyle.badge = val;
         else if (part === 'welcome') botProfile.menuStyle.welcomeEmoji = val;
-        else return msg.reply('⚠️ Opciones: *bullet*, *badge*, *welcome*');
+        else if (part === 'border') botProfile.menuStyle.borderEnd = val;
+        else return msg.reply('⚠️ Opciones: *bullet*, *badge*, *welcome*, *border*');
         logBotProfileChange(`emoji-${part}`, val, senderNumber);
         saveBotProfile();
         return msg.reply(`✅ Emoji *${part}* actualizado a ${val}`);
@@ -734,7 +748,35 @@ async function handleBotL2Command(msg, chat, argsArray, senderNumber) {
     }
 
     if (sub === 'creator' || sub === 'creador') {
-        return msg.reply('🔒 El creador del sistema es fijo: *Alexis GM*. No se puede cambiar.');
+        return msg.reply(`🔒 El creador del sistema es fijo: *${SYSTEM_CREATOR}*. No se puede cambiar.`);
+    }
+
+    if (sub === 'menuimagen' || sub === 'menuimg' || sub === 'menuimage') {
+        const media = await extractImageMediaFromMessage(msg);
+        if (!media) {
+            return msg.reply(
+                '⚠️ Envía una *imagen* con el comando o responde a una con:\n' +
+                `*.botl2 menuimagen*\n\n` +
+                `_Sin imagen personalizada se usa la tarjeta auto-generada con el nombre del bot._`
+            );
+        }
+        botProfile.menuImage = { data: media.data, mimetype: media.mimetype };
+        botProfile.hasCustomMenuImage = true;
+        logBotProfileChange('menuimagen', media.mimetype, senderNumber);
+        saveBotProfile();
+        return msg.reply(
+            '✅ *Imagen del menú actualizada.*\n\n' +
+            '🖼️ Se enviará con *.menu* y *.menupreview*.\n' +
+            'Para volver a la auto-generada: *.botl2 quitarmenuimagen*'
+        );
+    }
+
+    if (sub === 'quitarmenuimagen' || sub === 'delmenuimagen' || sub === 'nomenuimagen') {
+        botProfile.menuImage = null;
+        botProfile.hasCustomMenuImage = false;
+        logBotProfileChange('quitarmenuimagen', 'auto-generada', senderNumber);
+        saveBotProfile();
+        return msg.reply('✅ *Imagen del menú restablecida.* Se usará la tarjeta auto-generada.');
     }
 
     if (sub === 'menupreview' || sub === 'preview') {
@@ -753,9 +795,9 @@ async function handleBotL2Command(msg, chat, argsArray, senderNumber) {
             storeActive: false
         });
         try {
-            const imgB64 = await getMenuStickerB64(client.pupBrowser, getBotDisplayName(), style.creator);
-            if (imgB64) {
-                const media = new MessageMedia('image/png', imgB64, 'menu.png');
+            const img = await resolveMenuImageB64(botProfile, client.pupBrowser, getBotDisplayName(), style.creator);
+            if (img) {
+                const media = new MessageMedia(img.mimetype, img.b64, 'menu.png');
                 return chat.sendMessage(media, { caption: menuText });
             }
         } catch (e) {}
