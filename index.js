@@ -1657,6 +1657,7 @@ client.on('ready', async () => {
 
 // Cachear fotos ver-una-vez solo en grupos activados
 client.on('message', (msg) => {
+    if (!botReady) return;
     if (msg.fromMe) return;
     const chatId = msg.from || msg.to;
     if (chatId?.endsWith('@g.us') && !isActiveGroup(chatId)) return;
@@ -1675,6 +1676,7 @@ function normalizeContactId(id) {
 }
 
 client.on('group_join', async (notification) => {
+    if (!botReady) return;
     try {
         const chat = await notification.getChat();
         const settings = getGroupSettings(chat.id._serialized);
@@ -1705,6 +1707,7 @@ client.on('group_join', async (notification) => {
 // EVENTO: DESPEDIDAS (salidas y expulsiones)
 // ==========================================
 client.on('group_leave', async (notification) => {
+    if (!botReady) return;
     try {
         const chat = await notification.getChat();
         const settings = getGroupSettings(chat.id._serialized);
@@ -1779,6 +1782,7 @@ setInterval(() => {
 // LÓGICA DE MENSAJES Y COMANDOS
 // ==========================================
 client.on('message_create', async msg => {
+    if (!botReady) return;
     try {
         const text = msg.body.trim();
         if (!text.startsWith('.')) return;
@@ -3800,6 +3804,7 @@ client.on('message_create', async msg => {
 // ANTILINK + ANTIFLOOD — mensajes normales (sin punto)
 // ==========================================
 client.on('message_create', async msg => {
+    if (!botReady) return;
     try {
         const text = (msg.body || '').trim();
         if (!text || msg.fromMe) return;
