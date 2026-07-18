@@ -1413,6 +1413,8 @@ function resolvePuppeteerChromePath() {
 }
 
 const chromeExecutable = resolvePuppeteerChromePath();
+console.log('🟢 Node.js Version:', process.version);
+console.log('🟢 Node.js Path:', process.execPath);
 if (chromeExecutable) {
     console.log('🌐 Chrome Puppeteer:', chromeExecutable);
 } else {
