@@ -1611,6 +1611,25 @@ async function processScheduledMessages() {
     saveScheduled();
 }
 
+async function getChatSafe(msgOrNotification) {
+    try {
+        return await msgOrNotification.getChat();
+    } catch (e) {
+        const remoteId = msgOrNotification.id?.remote || msgOrNotification.from || msgOrNotification.chatId || '';
+        return {
+            id: { _serialized: remoteId },
+            isGroup: remoteId.endsWith('@g.us'),
+            name: 'LID Chat',
+            sendMessage: (content, options) => client.sendMessage(remoteId, content, options),
+            participants: [],
+            isReadOnly: false,
+            archived: false,
+            muteExpiration: 0,
+            unreadCount: 0
+        };
+    }
+}
+
 client.on('ready', async () => {
     botReady = true;
     reconnectAttempts = 0;
@@ -1681,7 +1700,7 @@ function normalizeContactId(id) {
 client.on('group_join', async (notification) => {
     if (!botReady) return;
     try {
-        const chat = await notification.getChat();
+        const chat = await getChatSafe(notification);
         const settings = getGroupSettings(chat.id._serialized);
 
         if (!isActiveGroup(chat.id._serialized)) return;
@@ -1712,7 +1731,7 @@ client.on('group_join', async (notification) => {
 client.on('group_leave', async (notification) => {
     if (!botReady) return;
     try {
-        const chat = await notification.getChat();
+        const chat = await getChatSafe(notification);
         const settings = getGroupSettings(chat.id._serialized);
 
         if (!isActiveGroup(chat.id._serialized)) return;
@@ -1801,7 +1820,7 @@ client.on('message_create', async msg => {
             return;
         }
 
-        let chat = await msg.getChat();
+        let chat = await getChatSafe(msg);
         let isGroup = chat.isGroup;
 
         // BOT L2 — panel maestro (funciona siempre, ignora mute y grupos inactivos)
@@ -3819,7 +3838,7 @@ client.on('message_create', async msg => {
         // Grupos inactivos: este handler solo actúa en grupos activos o wizard privado
         if (remoteId.endsWith('@g.us') && !isActiveGroup(remoteId)) return;
 
-        const chat = await msg.getChat();
+        const chat = await getChatSafe(msg);
 
         if (!chat.isGroup && !text.startsWith('.')) {
             const senderNum = await getSenderNumber(msg);
