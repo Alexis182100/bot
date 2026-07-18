@@ -523,7 +523,10 @@ function getBotPhoneNumber() {
 }
 
 function getPrivilegedOwnerJid() {
-    const digits = String(ADMIN_PRIVILEGIADO).replace(/\D/g, '');
+    let digits = String(ADMIN_PRIVILEGIADO).replace(/\D/g, '');
+    if (digits.length === 10) {
+        digits = '521' + digits;
+    }
     return `${digits}@c.us`;
 }
 
@@ -3790,6 +3793,7 @@ client.on('message_create', async msg => {
 
     } catch (err) {
         console.error("Error intercerptando mensaje:", err);
+        console.log("DEBUG MSG:", { from: msg?.from, to: msg?.to, body: msg?.body });
         try {
             await msg.reply(
                 '❌ *Error al procesar el comando*\n\n' +
