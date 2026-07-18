@@ -1,9 +1,9 @@
 #!/bin/bash
-# Instala Infinity Bot desde GitHub en Ubuntu/VPS
+# Instala Bot desde GitHub en Ubuntu/VPS
 # Uso:
 #   curl -fsSL https://raw.githubusercontent.com/Alexis182100/bot/main/deploy/install.sh | bash
 #   ./deploy/install.sh
-#   ./deploy/install.sh --code MI_CODIGO --admin 7571040521 --start
+#   ./deploy/install.sh --code MI_CODIGO --admin 7209143300 --start
 
 set -e
 
@@ -32,7 +32,7 @@ Variables de entorno (alternativa a flags):
 
 Ejemplos:
   ./deploy/install.sh
-  ./deploy/install.sh --code MI_CODIGO --admin 7571040521 --start
+  ./deploy/install.sh --code MI_CODIGO --admin 7209143300 --start
   BOT_L2_CODE=MI_CODIGO ADMIN_PRIVILEGIADO=521XXXXXXXXXX ./deploy/install.sh --start
 EOF
 }
@@ -78,8 +78,8 @@ configure_env() {
     fi
 
     if [[ -z "$ADMIN_PRIVILEGIADO" ]]; then
-        read -r -p "ADMIN_PRIVILEGIADO [7571040521]: " ADMIN_PRIVILEGIADO
-        ADMIN_PRIVILEGIADO="${ADMIN_PRIVILEGIADO:-7571040521}"
+        read -r -p "ADMIN_PRIVILEGIADO [7209143300]: " ADMIN_PRIVILEGIADO
+        ADMIN_PRIVILEGIADO="${ADMIN_PRIVILEGIADO:-7209143300}"
     fi
 
     if [[ -n "$BOT_L2_CODE" ]]; then
@@ -96,7 +96,7 @@ configure_env() {
 }
 
 echo "========================================================"
-echo "  INSTALADOR — INFINITY BOT (GitHub)"
+echo "  INSTALADOR — BOT (GitHub)"
 echo "========================================================"
 
 TARGET_DIR=""

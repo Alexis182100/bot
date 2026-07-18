@@ -1,7 +1,7 @@
 #!/bin/bash
 clear
 echo "========================================================"
-echo "  INFINITY BOT — WhatsApp"
+echo "  BOT — WhatsApp"
 echo "========================================================"
 
 if ! command -v node &>/dev/null; then
