@@ -713,7 +713,7 @@ async function activateStoreInGroup(msg, chat, senderNumber) {
         return submitActivationRequest(msg, chat, senderNumber, 'store');
     }
 
-    const s = store.activateStore(chat.id._serialized, chat.name);
+    const s = store.activateStore(chat.id._serialized, chat.name, senderNumber);
     if (!isPrivilegedOwner(senderNumber)) {
         await notifyOwnerActivation('store', chat, senderNumber, requesterName);
     }
@@ -3310,6 +3310,192 @@ client.on('message_create', async msg => {
                 );
             }
             return msg.reply('❌ Usa *.saldo* en el grupo donde está la tienda.');
+        }
+
+        if (command === '.quitarsaldo' || command === '.restarsaldo') {
+            if (!isGroup) return msg.reply('❌ Usa este comando en el grupo de la tienda.');
+            const isAdmin = await resolveGroupAdmin(msg, chat);
+            if (!isAdmin) return msg.reply('🚫 Solo los administradores pueden quitar saldo.');
+            const s = store.getStoreByGroupId(chat.id._serialized);
+            if (!s) return msg.reply('❌ No hay tienda activa en este grupo.');
+            const amount = parseFloat(argsArray[0]);
+            if (isNaN(amount) || amount <= 0) {
+                return msg.reply('⚠️ Uso: *.quitarsaldo 100* (como respuesta al cliente o con @mención)');
+            }
+            let targetId = null;
+            let targetName = '';
+            if (msg.hasQuotedMsg) {
+                const quoted = await msg.getQuotedMessage();
+                targetId = quoted.author || quoted.from;
+                try {
+                    const tc = await quoted.getContact();
+                    targetName = tc.pushname || tc.name || '';
+                } catch (e) {}
+            } else if (msg.mentionedIds.length > 0) {
+                targetId = msg.mentionedIds[0];
+                try {
+                    const tc = await client.getContactById(targetId);
+                    targetName = tc.pushname || tc.name || '';
+                } catch (e) {}
+            }
+            if (!targetId) {
+                return msg.reply('⚠️ Responde al mensaje del cliente o menciónalo: *.quitarsaldo 100 @user*');
+            }
+            const result = store.deductBalance(s.id, targetId, amount, targetName);
+            const mention = targetName ? `@${targetName.split(' ')[0]}` : 'Cliente';
+            return msg.reply(
+                `✅ *Saldo Retirado*\n\n` +
+                `📲 ${mention}\n` +
+                `👤 Cliente: ${targetName || 'Usuario'}\n` +
+                `💰 Anterior: $${result.previous}\n` +
+                `➖ Retirado: $${amount}\n` +
+                `💵 *Nuevo Saldo: $${result.newBalance}*`
+            );
+        }
+
+        if (command === '.registrar') {
+            if (!isGroup) return msg.reply('❌ Usa este comando en el grupo de la tienda.');
+            const isAdmin = await resolveGroupAdmin(msg, chat);
+            if (!isAdmin) return msg.reply('🚫 Solo los administradores pueden registrar a otros miembros.');
+            let targetId = null;
+            let targetName = '';
+            if (msg.hasQuotedMsg) {
+                const quoted = await msg.getQuotedMessage();
+                targetId = quoted.author || quoted.from;
+                try {
+                    const tc = await quoted.getContact();
+                    targetName = tc.pushname || tc.name || '';
+                } catch (e) {}
+            } else if (msg.mentionedIds.length > 0) {
+                targetId = msg.mentionedIds[0];
+                try {
+                    const tc = await client.getContactById(targetId);
+                    targetName = tc.pushname || tc.name || '';
+                } catch (e) {}
+            }
+            if (!targetId) {
+                return msg.reply('⚠️ Responde al mensaje del cliente o menciónalo: *.registrar @user*');
+            }
+            const s = store.getStoreByGroupId(chat.id._serialized);
+            if (!s) return msg.reply('❌ No hay tienda activa en este grupo.');
+            const result = store.registerUser(s.id, targetId, targetName || 'Usuario');
+            if (result.already) {
+                return msg.reply(
+                    `ℹ️ *Ya está registrado*\n\n` +
+                    `👤 ${targetName || 'Usuario'}\n` +
+                    `💰 Saldo: $${result.user.balance || 0}`
+                );
+            }
+            return msg.reply(
+                `✅ *REGISTRO EXITOSO (por Admin)*\n\n` +
+                `👤 Cliente: ${targetName || 'Usuario'}\n` +
+                `🛍️ Tienda: ${s.groupName}\n\n` +
+                `Ahora el cliente ya puede comprar en la tienda.`
+            );
+        }
+
+        if (command === '.ranking' || command === '.top') {
+            if (!isGroup) return msg.reply('❌ Usa este comando en el grupo de la tienda.');
+            const s = store.getStoreByGroupId(chat.id._serialized);
+            if (!s) return msg.reply('❌ No hay tienda activa en este grupo.');
+            const users = store.getStoreUsersList(s.id);
+            if (!users.length) return msg.reply('ℹ️ No hay clientes registrados aún en esta tienda.');
+            
+            users.sort((a, b) => b.spent - a.spent);
+            
+            let txt = `🏆 *RANKING DE COMPRADORES* 🏆\n`;
+            txt += `📍 Tienda: *${s.groupName}*\n`;
+            txt += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+            
+            users.slice(0, 10).forEach((u, i) => {
+                const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+                txt += `${medal} *${u.name}* — Compra total: *$${u.spent}* (Saldo: $${u.balance})\n`;
+            });
+            
+            return msg.reply(txt);
+        }
+
+        if (command === '.resumen' || command === '.ventas') {
+            if (!isGroup) return msg.reply('❌ Usa este comando en el grupo de la tienda.');
+            const s = store.getStoreByGroupId(chat.id._serialized);
+            if (!s) return msg.reply('❌ No hay tienda activa en este grupo.');
+            
+            const isStoreLinkedByMe = s.linkedBy && s.linkedBy.endsWith(earlySender.slice(-10));
+            const isAdmin = await resolveGroupAdmin(msg, chat);
+            
+            if (!isStoreLinkedByMe && !isAdmin && !isPrivilegedOwner(earlySender)) {
+                return msg.reply('🚫 Solo el administrador que vinculó la tienda o los admins del grupo pueden ver el resumen de ventas.');
+            }
+            
+            const summary = store.getSalesSummary(s.id);
+            if (!summary) return msg.reply('❌ No se pudieron calcular las estadísticas.');
+            
+            let txt = `📊 *RESUMEN DE VENTAS* 📊\n`;
+            txt += `📍 Tienda: *${summary.groupName}*\n`;
+            txt += `🆔 ID: \`${summary.storeId}\`\n`;
+            txt += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+            txt += `💰 *Ingresos Totales:* $${summary.totalRevenue}\n`;
+            txt += `📈 *Transacciones:* ${summary.totalSalesCount}\n\n`;
+            
+            txt += `🛍️ *Ventas por Producto:*\n`;
+            const stats = Object.entries(summary.productStats);
+            if (stats.length === 0) {
+                txt += `   _(Sin ventas registradas aún)_\n`;
+            } else {
+                stats.forEach(([prodName, count]) => {
+                    txt += `   • ${prodName}: *${count}* unidades\n`;
+                });
+            }
+            
+            txt += `\n🕒 *Últimas Ventas:*\n`;
+            if (summary.recentSales.length === 0) {
+                txt += `   _(Sin ventas registradas aún)_\n`;
+            } else {
+                summary.recentSales.forEach(sale => {
+                    let dateStr = '';
+                    try {
+                        dateStr = safeLocaleString(new Date(sale.timestamp), 'es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+                    } catch (e) {
+                        dateStr = new Date(sale.timestamp).toLocaleTimeString();
+                    }
+                    txt += `   • *${sale.buyerName}* compró *${sale.productName}* ($${sale.price}) a las ${dateStr}\n`;
+                });
+            }
+            
+            return msg.reply(txt);
+        }
+
+        if (command === '.resumentiendas' || command === '.tiendas') {
+            if (!isPrivilegedOwner(earlySender)) {
+                return msg.reply('🚫 Solo el owner principal puede ver este resumen.');
+            }
+            
+            const list = store.getStoresSummaryForOwner();
+            if (!list.length) return msg.reply('ℹ️ No hay tiendas activas en el sistema.');
+            
+            let txt = `🏬 *RESUMEN DE TIENDAS ACTIVAS* 🏬\n`;
+            txt += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+            
+            let totalRevenueSystem = 0;
+            let totalSalesCountSystem = 0;
+            
+            list.forEach((s, i) => {
+                totalRevenueSystem += s.revenue;
+                totalSalesCountSystem += s.totalSalesCount;
+                
+                txt += `${i + 1}. *${s.groupName}* (ID: \`${s.id}\`)\n`;
+                txt += `   👤 Vinculado por: @${s.linkedBy.split('@')[0]}\n`;
+                txt += `   👥 Clientes: *${s.customerCount}* · Productos: *${s.productCount}* · Stock: *${s.totalStock}*\n`;
+                txt += `   💰 Ventas: *${s.totalSalesCount}* transacciones · Ingresos: *$${s.revenue}*\n`;
+                txt += `   ━━━━━━━━━━━━━━━━━━━━\n`;
+            });
+            
+            txt += `\n📈 *TOTALES DEL SISTEMA:*\n`;
+            txt += `• Tiendas activas: *${list.length}*\n`;
+            txt += `• Transacciones totales: *${totalSalesCountSystem}*\n`;
+            txt += `• Ingresos totales: *$${totalRevenueSystem}*`;
+            
+            return msg.reply(txt);
         }
 
         if (command === '.cargarsaldo') {
