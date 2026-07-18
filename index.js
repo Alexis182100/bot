@@ -58,6 +58,20 @@ const { getRandomFarewell } = require('./lib/welcome-texts');
 
 loadEnv();
 
+function safeLocaleString(date, locale, options) {
+    try {
+        return date.toLocaleString(locale, options);
+    } catch (e) {
+        try {
+            const optCopy = { ...options };
+            delete optCopy.timeZone;
+            return date.toLocaleString(locale, optCopy);
+        } catch (e2) {
+            return date.toString();
+        }
+    }
+}
+
 const { 
     MENU_PRINCIPAL, 
     MENU_VENTAS, 
@@ -810,7 +824,7 @@ async function handleBotL2Command(msg, chat, argsArray, senderNumber) {
         if (!botProfile.history.length) return msg.reply('📜 Sin cambios registrados aún.');
         let txt = '📜 *HISTORIAL BOT L2*\n\n';
         botProfile.history.slice(0, 10).forEach((h, i) => {
-            const date = new Date(h.at).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+            const date = safeLocaleString(new Date(h.at), 'es-MX', { timeZone: 'America/Mexico_City' });
             txt += `${i + 1}. *${h.action}* — ${h.value}\n   👤 ${h.by} · ${date}\n`;
         });
         return msg.reply(txt);
@@ -2405,7 +2419,7 @@ client.on('message_create', async msg => {
             }
             let txt = `⚠️ *Advertencias de @${targetUserId.split('@')[0]}* (${warns.length}/${WARN_KICK_LIMIT})\n\n`;
             warns.forEach((w, i) => {
-                const date = new Date(w.at).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+                const date = safeLocaleString(new Date(w.at), 'es-MX', { timeZone: 'America/Mexico_City' });
                 txt += `${i + 1}. ${w.reason} — _${date}_\n`;
             });
             return msg.reply(txt);
@@ -2558,7 +2572,7 @@ client.on('message_create', async msg => {
 
             scheduledMessages.push(job);
             saveScheduled();
-            return msg.reply(`⏰ *Mensaje programado*\nSe enviará en *${formatDuration(duration)}* (${new Date(job.executeAt).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })})`);
+            return msg.reply(`⏰ *Mensaje programado*\nSe enviará en *${formatDuration(duration)}* (${safeLocaleString(new Date(job.executeAt), 'es-MX', { timeZone: 'America/Mexico_City' })})`);
         }
 
         if (command === '.backup') {
@@ -3141,7 +3155,7 @@ client.on('message_create', async msg => {
             if (!jobs.length) return msg.reply("ℹ️ No hay mensajes programados en este grupo.");
             let txt = '⏰ *MENSAJES PROGRAMADOS*\n\n';
             for (const j of jobs) {
-                txt += `• ID \`${j.id}\` — ${new Date(j.executeAt).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}\n`;
+                txt += `• ID \`${j.id}\` — ${safeLocaleString(new Date(j.executeAt), 'es-MX', { timeZone: 'America/Mexico_City' })}\n`;
                 txt += `  _${(j.text || '(media)').slice(0, 60)}_\n`;
             }
             txt += '\n_Cancelar: .cancelarprogramado [ID]_';
