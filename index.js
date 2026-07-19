@@ -1583,7 +1583,26 @@ const WA_PHONE = (process.env.WA_PHONE || '').replace(/\D/g, '');
 const LOGIN_MODE = (process.env.LOGIN_MODE || (WA_PHONE ? 'code' : 'qr')).toLowerCase();
 const USE_PAIRING_CODE = LOGIN_MODE === 'code';
 
-if (USE_PAIRING_CODE && (!WA_PHONE || WA_PHONE.length < 10 || WA_PHONE === '5210000000000')) {
+/** Sesión LocalAuth ya guardada → no pedir código otra vez (rompe el arranque). */
+function hasExistingWaSession() {
+    const defaultDir = path.join(AUTH_PATH, 'session', 'Default');
+    try {
+        if (!fs.existsSync(defaultDir)) return false;
+        const markers = [
+            path.join(defaultDir, 'Cookies'),
+            path.join(defaultDir, 'Local Storage'),
+            path.join(defaultDir, 'IndexedDB'),
+            path.join(defaultDir, 'Session Storage')
+        ];
+        return markers.some(p => fs.existsSync(p));
+    } catch (e) {
+        return false;
+    }
+}
+
+const HAS_SAVED_SESSION = hasExistingWaSession();
+
+if (USE_PAIRING_CODE && !HAS_SAVED_SESSION && (!WA_PHONE || WA_PHONE.length < 10 || WA_PHONE === '5210000000000')) {
     console.error('\n❌ FALTA CONFIGURAR WA_PHONE EN .env\n');
     console.error('   1. nano .env');
     console.error('   2. WA_PHONE=5212281234567   (tu número sin + ni espacios)');
@@ -1633,13 +1652,17 @@ const clientOptions = {
     }
 };
 
-if (USE_PAIRING_CODE) {
+// Solo pedir código de vinculación si NO hay sesión guardada.
+// Si hay sesión, pairWithPhoneNumber fuerza requestPairingCode y revienta con "t: t".
+if (USE_PAIRING_CODE && !HAS_SAVED_SESSION) {
     clientOptions.pairWithPhoneNumber = {
         phoneNumber: WA_PHONE,
         showNotification: true,
-        intervalMs: 120000
+        intervalMs: 180000
     };
-    console.log(`📱 Modo CÓDIGO — número ${WA_PHONE.slice(0, 4)}****${WA_PHONE.slice(-4)}`);
+    console.log(`📱 Modo CÓDIGO — número ${WA_PHONE.slice(0, 4)}****${WA_PHONE.slice(-4)} (sin sesión, hay que vincular)`);
+} else if (HAS_SAVED_SESSION) {
+    console.log('🔐 Sesión WhatsApp encontrada — restaurando (sin pedir código de nuevo)');
 } else {
     console.log('📷 Modo QR — escanea rápido (expira ~20s)');
 }
