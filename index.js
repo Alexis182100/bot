@@ -1645,22 +1645,44 @@ async function processScheduledMessages() {
 }
 
 async function getChatSafe(msgOrNotification) {
+    // Intento 1: método normal
     try {
-        return await msgOrNotification.getChat();
+        const chat = await msgOrNotification.getChat();
+        if (chat && chat.participants && chat.participants.length > 0) return chat;
+        // Si el chat es grupo pero no trajo participants, intentar refrescar
+        if (chat && chat.isGroup && (!chat.participants || chat.participants.length === 0)) {
+            try {
+                const fresh = await client.getChatById(chat.id._serialized);
+                if (fresh && fresh.participants && fresh.participants.length > 0) return fresh;
+            } catch (e2) {}
+        }
+        if (chat) return chat;
     } catch (e) {
-        const remoteId = msgOrNotification.id?.remote || msgOrNotification.from || msgOrNotification.chatId || '';
-        return {
-            id: { _serialized: remoteId },
-            isGroup: remoteId.endsWith('@g.us'),
-            name: 'LID Chat',
-            sendMessage: (content, options) => client.sendMessage(remoteId, content, options),
-            participants: [],
-            isReadOnly: false,
-            archived: false,
-            muteExpiration: 0,
-            unreadCount: 0
-        };
+        // getChat() falló — intentar por ID directo
     }
+
+    // Intento 2: obtener chat por ID directo
+    const remoteId = msgOrNotification.id?.remote || msgOrNotification.from || msgOrNotification.chatId || '';
+    if (remoteId) {
+        try {
+            const chat = await client.getChatById(remoteId);
+            if (chat) return chat;
+        } catch (e2) {}
+    }
+
+    // Intento 3: fallback mínimo para no crashear
+    console.warn('⚠️ getChatSafe: no se pudo obtener chat real para', remoteId);
+    return {
+        id: { _serialized: remoteId },
+        isGroup: remoteId.endsWith('@g.us'),
+        name: 'Chat',
+        sendMessage: (content, options) => client.sendMessage(remoteId, content, options),
+        participants: [],
+        isReadOnly: false,
+        archived: false,
+        muteExpiration: 0,
+        unreadCount: 0
+    };
 }
 
 client.on('ready', async () => {
