@@ -1578,7 +1578,9 @@ if (chromeExecutable) {
 
 const AUTH_PATH = path.join(__dirname, '.wwebjs_auth');
 const WA_CACHE_DIR = path.join(__dirname, '.wwebjs_cache');
-const WA_WEB_VERSION = process.env.WA_WEB_VERSION || '2.3000.1042562325-alpha';
+// Solo fijar versión si WA_WEB_VERSION está en .env. Por defecto = WhatsApp Web EN VIVO
+// (el pin viejo 2.3000.1042562325-alpha rompe el arranque / pairing con "t: t").
+const WA_WEB_VERSION = (process.env.WA_WEB_VERSION || '').trim();
 const WA_PHONE = (process.env.WA_PHONE || '').replace(/\D/g, '');
 const LOGIN_MODE = (process.env.LOGIN_MODE || (WA_PHONE ? 'code' : 'qr')).toLowerCase();
 const USE_PAIRING_CODE = LOGIN_MODE === 'code';
@@ -1614,12 +1616,6 @@ if (USE_PAIRING_CODE && !HAS_SAVED_SESSION && (!WA_PHONE || WA_PHONE.length < 10
 const clientOptions = {
     authStrategy: new LocalAuth({ dataPath: AUTH_PATH }),
     authTimeoutMs: 120000,
-    webVersion: WA_WEB_VERSION,
-    webVersionCache: {
-        type: 'local',
-        path: WA_CACHE_DIR,
-        strict: false
-    },
     puppeteer: {
         headless: true,
         ...(chromeExecutable ? { executablePath: chromeExecutable } : {}),
@@ -1640,20 +1636,30 @@ const clientOptions = {
             '--metrics-recording-only',
             '--mute-audio',
             '--window-size=1280,720',
-            // Heap razonable para VPS 2GB — 460 era demasiado bajo y tumba Chrome al cargar WA Web
-            '--js-flags=--max-old-space-size=640',
-            '--renderer-process-limit=2',
             '--disable-features=site-per-process,TranslateUI,BlinkGenPropertyTrees',
             '--disable-component-update',
             '--disable-client-side-phishing-detection',
+            '--memory-pressure-off',
             '--disable-hang-monitor'
         ],
-        protocolTimeout: 180000
+        protocolTimeout: 0
     }
 };
 
+// Solo pin opcional (desactivado por defecto — usa web.whatsapp.com en vivo)
+if (WA_WEB_VERSION) {
+    clientOptions.webVersion = WA_WEB_VERSION;
+    clientOptions.webVersionCache = {
+        type: 'local',
+        path: WA_CACHE_DIR,
+        strict: false
+    };
+    console.log(`📦 WA Web fijada por .env: ${WA_WEB_VERSION}`);
+} else {
+    console.log('🌐 WA Web en vivo (sin pin) — más estable');
+}
+
 // Solo pedir código de vinculación si NO hay sesión guardada.
-// Si hay sesión, pairWithPhoneNumber fuerza requestPairingCode y revienta con "t: t".
 if (USE_PAIRING_CODE && !HAS_SAVED_SESSION) {
     clientOptions.pairWithPhoneNumber = {
         phoneNumber: WA_PHONE,
@@ -4112,7 +4118,19 @@ function isRetryableInitError(msg) {
 async function startBot() {
     console.log('⏳ Iniciando bot... (en PCs lentas WhatsApp Web puede tardar varios minutos)');
     clearChromeSessionLocks();
-    await ensureWaVersionCache(WA_CACHE_DIR, WA_WEB_VERSION);
+    // Solo descargar HTML fijado si el usuario lo pidió en .env
+    if (WA_WEB_VERSION) {
+        await ensureWaVersionCache(WA_CACHE_DIR, WA_WEB_VERSION);
+    } else {
+        // Borrar pin viejo para forzar web.whatsapp.com en vivo
+        try {
+            if (fs.existsSync(WA_CACHE_DIR)) {
+                for (const f of fs.readdirSync(WA_CACHE_DIR)) {
+                    if (f.endsWith('.html')) fs.unlinkSync(path.join(WA_CACHE_DIR, f));
+                }
+            }
+        } catch (e) {}
+    }
     try {
         await client.initialize();
     } catch (err) {
@@ -4131,9 +4149,8 @@ async function startBot() {
 
         console.error('❌ No se pudo iniciar el bot:', msg);
         console.log('\n💡 Solución definitiva en el VPS:');
-        console.log('   chmod +x deploy/reparar-arranque.sh && ./deploy/reparar-arranque.sh');
-        console.log('   Si el sistema pide reboot: sudo reboot  →  luego pm2 start bot-ventas\n');
-        // Delay antes de salir para que PM2 no martillee Chrome
+        console.log('   bash deploy/reparar-nuclear.sh');
+        console.log('   Si pide código / sesión muerta: ./deploy/vincular.sh\n');
         await new Promise(r => setTimeout(r, 20000));
         process.exit(1);
     }
