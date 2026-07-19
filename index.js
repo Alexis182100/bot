@@ -1172,14 +1172,45 @@ function getWarnsForUser(groupId, userId) {
 
 const INACTIVE_GROUP_COMMANDS = new Set(['.activarbot', '.desactivarbot', '.solicitartienda']);
 
+/**
+ * Busca un participante en la lista del grupo usando múltiples estrategias:
+ *  1. Match exacto por msg.author / ID serializado (funciona con LID)
+ *  2. Match por últimos 10 dígitos del número de teléfono (fallback clásico)
+ */
+function findParticipantByIdOrPhone(participants, serializedId, phoneLast10) {
+    if (!participants || participants.length === 0) return null;
+
+    // 1. Match exacto por _serialized (funciona siempre, incluyendo LID)
+    if (serializedId) {
+        const exact = participants.find(p =>
+            p.id && (p.id._serialized === serializedId || p.id.user === serializedId.split('@')[0])
+        );
+        if (exact) return exact;
+    }
+
+    // 2. Fallback: match por últimos 10 dígitos del teléfono
+    if (phoneLast10) {
+        const byPhone = participants.find(p => {
+            if (!p.id) return false;
+            const idStr = p.id.user || p.id._serialized || '';
+            return idStr.includes(phoneLast10);
+        });
+        if (byPhone) return byPhone;
+    }
+
+    return null;
+}
+
 async function resolveGroupAdmin(msg, chat) {
     try {
         const sender = await msg.getContact();
         const senderNumber = sender.id.user;
         const sLast10 = senderNumber.slice(-10);
-        const participant = chat.participants.find(p => p.id && (p.id.user || p.id._serialized || '').includes(sLast10));
+        const authorId = msg.author || msg.from;
+
+        const participant = findParticipantByIdOrPhone(chat.participants, authorId, sLast10);
         if (participant && (participant.isAdmin || participant.isSuperAdmin)) return true;
-        if (senderNumber.includes(ADMIN_PRIVILEGIADO)) return true;
+        if (senderNumber && senderNumber.includes(ADMIN_PRIVILEGIADO)) return true;
     } catch (e) {}
     return false;
 }
@@ -1188,7 +1219,8 @@ async function isChatBotAdmin(chat) {
     try {
         const botNumber = client.info?.wid?.user;
         if (!botNumber || !chat?.participants) return false;
-        const botParticipant = chat.participants.find(p => p.id && (p.id.user || p.id._serialized || '').includes(botNumber.slice(-10)));
+        const botWid = client.info?.wid?._serialized;
+        const botParticipant = findParticipantByIdOrPhone(chat.participants, botWid, botNumber.slice(-10));
         return !!(botParticipant && (botParticipant.isAdmin || botParticipant.isSuperAdmin));
     } catch (e) {
         return false;
@@ -1299,7 +1331,8 @@ async function checkIsAdmin(msg, chat, isGroup, senderNumber) {
     try {
         const sender = await msg.getContact();
         const sLast10 = sender.id.user.slice(-10);
-        const participant = chat.participants.find(p => p.id && (p.id.user || p.id._serialized || '').includes(sLast10));
+        const authorId = msg.author || msg.from;
+        const participant = findParticipantByIdOrPhone(chat.participants, authorId, sLast10);
         if (participant && (participant.isAdmin || participant.isSuperAdmin)) {
             isAdmin = true;
         }
@@ -2088,15 +2121,34 @@ client.on('message_create', async msg => {
         if (isGroup) {
             try {
                 const sLast10 = senderNumber.slice(-10);
+                const authorId = msg.author || msg.from;
 
-                const participant = chat.participants.find(p => p.id && (p.id.user || p.id._serialized || '').includes(sLast10));
+                // === DEBUG ADMIN — borrar después de confirmar fix ===
+                if (command === '.ping' || command === '.activarbot') {
+                    console.log('🔍 [DEBUG-ADMIN] senderNumber:', senderNumber, '| sLast10:', sLast10);
+                    console.log('🔍 [DEBUG-ADMIN] authorId:', authorId);
+                    console.log('🔍 [DEBUG-ADMIN] chat.participants count:', chat.participants?.length || 0);
+                    if (chat.participants && chat.participants.length > 0) {
+                        chat.participants.slice(0, 5).forEach((p, i) => {
+                            console.log(`🔍 [DEBUG-ADMIN] participant[${i}]:`, JSON.stringify({
+                                id: p.id,
+                                isAdmin: p.isAdmin,
+                                isSuperAdmin: p.isSuperAdmin
+                            }));
+                        });
+                    }
+                }
+                // === FIN DEBUG ===
+
+                const participant = findParticipantByIdOrPhone(chat.participants, authorId, sLast10);
                 if (participant && (participant.isAdmin || participant.isSuperAdmin)) {
                     isAdmin = true;
                 }
 
                 const botNumber = client.info?.wid?.user;
                 if (botNumber) {
-                    const botParticipant = chat.participants.find(p => p.id && (p.id.user || p.id._serialized || '').includes(botNumber.slice(-10)));
+                    const botWid = client.info?.wid?._serialized;
+                    const botParticipant = findParticipantByIdOrPhone(chat.participants, botWid, botNumber.slice(-10));
                     if (botParticipant && (botParticipant.isAdmin || botParticipant.isSuperAdmin)) {
                         isBotAdmin = true;
                     }
