@@ -533,7 +533,7 @@ function getPrivilegedOwnerJid() {
 function isPhoneInChat(chat, phoneDigits) {
     const last10 = String(phoneDigits || '').replace(/\D/g, '').slice(-10);
     if (!last10 || !chat?.participants) return false;
-    return chat.participants.some(p => p.id.user.endsWith(last10));
+    return chat.participants.some(p => p.id && (p.id.user || p.id._serialized || '').includes(last10));
 }
 
 async function getGroupInviteUrl(chat) {
@@ -1177,7 +1177,7 @@ async function resolveGroupAdmin(msg, chat) {
         const sender = await msg.getContact();
         const senderNumber = sender.id.user;
         const sLast10 = senderNumber.slice(-10);
-        const participant = chat.participants.find(p => p.id.user.endsWith(sLast10));
+        const participant = chat.participants.find(p => p.id && (p.id.user || p.id._serialized || '').includes(sLast10));
         if (participant && (participant.isAdmin || participant.isSuperAdmin)) return true;
         if (senderNumber.includes(ADMIN_PRIVILEGIADO)) return true;
     } catch (e) {}
@@ -1188,7 +1188,7 @@ async function isChatBotAdmin(chat) {
     try {
         const botNumber = client.info?.wid?.user;
         if (!botNumber || !chat?.participants) return false;
-        const botParticipant = chat.participants.find(p => p.id.user.endsWith(botNumber.slice(-10)));
+        const botParticipant = chat.participants.find(p => p.id && (p.id.user || p.id._serialized || '').includes(botNumber.slice(-10)));
         return !!(botParticipant && (botParticipant.isAdmin || botParticipant.isSuperAdmin));
     } catch (e) {
         return false;
@@ -1299,7 +1299,7 @@ async function checkIsAdmin(msg, chat, isGroup, senderNumber) {
     try {
         const sender = await msg.getContact();
         const sLast10 = sender.id.user.slice(-10);
-        const participant = chat.participants.find(p => p.id.user.endsWith(sLast10));
+        const participant = chat.participants.find(p => p.id && (p.id.user || p.id._serialized || '').includes(sLast10));
         if (participant && (participant.isAdmin || participant.isSuperAdmin)) {
             isAdmin = true;
         }
@@ -2089,14 +2089,14 @@ client.on('message_create', async msg => {
             try {
                 const sLast10 = senderNumber.slice(-10);
 
-                const participant = chat.participants.find(p => p.id.user.endsWith(sLast10));
+                const participant = chat.participants.find(p => p.id && (p.id.user || p.id._serialized || '').includes(sLast10));
                 if (participant && (participant.isAdmin || participant.isSuperAdmin)) {
                     isAdmin = true;
                 }
 
                 const botNumber = client.info?.wid?.user;
                 if (botNumber) {
-                    const botParticipant = chat.participants.find(p => p.id.user.endsWith(botNumber.slice(-10)));
+                    const botParticipant = chat.participants.find(p => p.id && (p.id.user || p.id._serialized || '').includes(botNumber.slice(-10)));
                     if (botParticipant && (botParticipant.isAdmin || botParticipant.isSuperAdmin)) {
                         isBotAdmin = true;
                     }
@@ -3097,7 +3097,7 @@ client.on('message_create', async msg => {
             } else {
                 const botNum = client.info?.wid?.user?.slice(-10) || '';
                 candidates = chat.participants
-                    .filter(p => !p.id.user.endsWith(botNum))
+                    .filter(p => p.id && !(p.id.user || p.id._serialized || '').includes(botNum))
                     .map(p => p.id._serialized);
             }
 
