@@ -1621,16 +1621,15 @@ const clientOptions = {
             '--metrics-recording-only',
             '--mute-audio',
             '--window-size=1280,720',
-            // Modo lite 2GB: limita el heap JS de Chrome y desactiva features que comen RAM
-            '--js-flags=--max-old-space-size=460',
+            // Heap razonable para VPS 2GB — 460 era demasiado bajo y tumba Chrome al cargar WA Web
+            '--js-flags=--max-old-space-size=640',
             '--renderer-process-limit=2',
             '--disable-features=site-per-process,TranslateUI,BlinkGenPropertyTrees',
             '--disable-component-update',
             '--disable-client-side-phishing-detection',
-            '--memory-pressure-off',
             '--disable-hang-monitor'
         ],
-        protocolTimeout: 0
+        protocolTimeout: 180000
     }
 };
 
@@ -4060,31 +4059,59 @@ client.on('message_create', async msg => {
 });
 
 let initRetries = 0;
-const MAX_INIT_RETRIES = 3;
+const MAX_INIT_RETRIES = 5;
+
+function clearChromeSessionLocks() {
+    try {
+        const sessionDir = path.join(AUTH_PATH, 'session');
+        if (!fs.existsSync(sessionDir)) return;
+        for (const name of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile']) {
+            const p = path.join(sessionDir, name);
+            try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (e) {}
+        }
+    } catch (e) {}
+}
+
+function isRetryableInitError(msg) {
+    const m = String(msg || '').toLowerCase();
+    return (
+        m.includes('timed out') ||
+        m.includes('timeout') ||
+        m.includes('execution context was destroyed') ||
+        m.includes('protocol error') ||
+        m.includes('target closed') ||
+        m.includes('session closed') ||
+        m.includes('navigation') ||
+        m.includes('browser has disconnected')
+    );
+}
 
 async function startBot() {
     console.log('⏳ Iniciando bot... (en PCs lentas WhatsApp Web puede tardar varios minutos)');
+    clearChromeSessionLocks();
     await ensureWaVersionCache(WA_CACHE_DIR, WA_WEB_VERSION);
     try {
         await client.initialize();
     } catch (err) {
         const msg = err?.message || String(err);
-        const isTimeout = msg.includes('timed out') || msg.includes('timeout');
         initRetries++;
 
-        if (isTimeout && initRetries <= MAX_INIT_RETRIES) {
-            const waitSec = 15 * initRetries;
-            console.warn(`⚠️ Timeout al cargar WhatsApp Web. Reintento ${initRetries}/${MAX_INIT_RETRIES} en ${waitSec}s...`);
+        if (isRetryableInitError(msg) && initRetries <= MAX_INIT_RETRIES) {
+            const waitSec = Math.min(10 + (15 * initRetries), 90);
+            console.warn(`⚠️ Arranque falló (${msg.slice(0, 80)}).`);
+            console.warn(`   Reintento ${initRetries}/${MAX_INIT_RETRIES} en ${waitSec}s (espera — no mates el proceso)...`);
+            try { await client.destroy().catch(() => {}); } catch (e) {}
+            clearChromeSessionLocks();
             await new Promise(r => setTimeout(r, waitSec * 1000));
             return startBot();
         }
 
         console.error('❌ No se pudo iniciar el bot:', msg);
-        console.log('\n💡 Si sigue fallando, prueba:');
-        console.log('   1. Verificar conexión a internet');
-        console.log('   2. Cerrar otros Chrome/Chromium abiertos');
-        console.log('   3. No borres .wwebjs_cache salvo que te lo indiquen (guarda la versión de WA Web)');
-        console.log('   4. Si la sesión está corrupta: rm -rf .wwebjs_auth (tendrás que escanear QR de nuevo)\n');
+        console.log('\n💡 Solución definitiva en el VPS:');
+        console.log('   chmod +x deploy/reparar-arranque.sh && ./deploy/reparar-arranque.sh');
+        console.log('   Si el sistema pide reboot: sudo reboot  →  luego pm2 start bot-ventas\n');
+        // Delay antes de salir para que PM2 no martillee Chrome
+        await new Promise(r => setTimeout(r, 20000));
         process.exit(1);
     }
 }
