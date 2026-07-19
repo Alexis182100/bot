@@ -1,15 +1,16 @@
 #!/bin/bash
-# Vincular WhatsApp por CÓDIGO (recomendado en AWS VPS)
+# Vincular WhatsApp por QR (el modo CÓDIGO está roto en WhatsApp Web actual → error "t: t")
 # Uso: ./deploy/vincular.sh
 set -e
 cd "$(dirname "$0")/.."
 
 echo "========================================================"
-echo "  VINCULAR WHATSAPP — MODO CÓDIGO"
+echo "  VINCULAR WHATSAPP — MODO QR"
+echo "========================================================"
+echo "  (El código de 8 letras está roto en WA Web;"
+echo "   se usa QR en terminal — igual de válido)"
 echo "========================================================"
 
-# Seguridad: código de desbloqueo del sistema requerido para vincular
-# (solo se guarda el hash SHA-256, nunca el código en texto plano)
 UNLOCK_HASH="220a227688e246af1e0fb6fca4c233e0f647afeba862e406f4ee7e6795a5eae4"
 hash_of() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
 
@@ -31,34 +32,40 @@ if [ "$(hash_of "$UNLOCK")" != "$UNLOCK_HASH" ]; then
     fi
 fi
 
+echo "[1/5] Detener bot / Chrome..."
+pm2 stop all 2>/dev/null || true
+pm2 delete all 2>/dev/null || true
 sudo systemctl stop wabot 2>/dev/null || true
-pkill -f "node index.js" 2>/dev/null || true
+pkill -9 -f "node index.js" 2>/dev/null || true
+pkill -9 -f chrome 2>/dev/null || true
+sleep 2
 
-echo "[1/4] Borrando sesión anterior..."
+echo "[2/5] Borrando sesión rota y caché..."
 rm -rf .wwebjs_auth .wwebjs_cache
+mkdir -p .wwebjs_cache
 
-echo "[2/4] Archivo .env..."
+echo "[3/5] Archivo .env..."
 if [ ! -f ".env" ]; then
     cp .env.example .env
     echo "      Creado .env desde plantilla."
 fi
 
-# Asegurar LOGIN_MODE=code
+# QR obligatorio para vincular (pairing code falla con "t: t")
 if grep -q '^LOGIN_MODE=' .env; then
-    sed -i 's/^LOGIN_MODE=.*/LOGIN_MODE=code/' .env
+    sed -i 's/^LOGIN_MODE=.*/LOGIN_MODE=qr/' .env
 else
-    echo 'LOGIN_MODE=code' >> .env
+    echo 'LOGIN_MODE=qr' >> .env
 fi
 
-# Quitar WA_PHONE vacío/comentado si quedó mal
-CURRENT_PHONE=$(grep '^WA_PHONE=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' || true)
+# Quitar pin WA viejo
+if grep -q '^WA_WEB_VERSION=' .env; then
+    sed -i 's/^WA_WEB_VERSION=.*/# WA_WEB_VERSION=/' .env
+fi
 
+CURRENT_PHONE=$(grep '^WA_PHONE=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' || true)
 if [ -z "$CURRENT_PHONE" ] || [ "$CURRENT_PHONE" = "5210000000000" ]; then
     echo ""
-    echo "  ⚠️  Edita .env y pon tu número en WA_PHONE"
-    echo "      Ejemplo: WA_PHONE=5212281234567"
-    echo ""
-    read -r -p "  Número (sin + ni espacios): " INPUT_PHONE
+    read -r -p "  Número del bot (sin + ni espacios): " INPUT_PHONE
     INPUT_PHONE=$(echo "$INPUT_PHONE" | tr -d '+ -()')
     if [ -z "$INPUT_PHONE" ]; then
         echo "[ERROR] Número vacío. Abortando."
@@ -69,18 +76,21 @@ if [ -z "$CURRENT_PHONE" ] || [ "$CURRENT_PHONE" = "5210000000000" ]; then
     else
         echo "WA_PHONE=${INPUT_PHONE}" >> .env
     fi
-    echo "      WA_PHONE=${INPUT_PHONE} guardado."
 fi
 
-echo "[3/4] Dependencias..."
+echo "[4/5] Dependencias..."
 chmod +x start.sh setup.sh deploy/*.sh 2>/dev/null || true
 if [ ! -d "node_modules" ]; then
     npm install
 fi
 
-echo "[4/4] Iniciando bot..."
+echo "[5/5] Iniciando — VA A SALIR UN QR EN LA TERMINAL"
 echo ""
-echo "  Cuando aparezca el CÓDIGO DE 8 LETRAS:"
-echo "  WhatsApp → Dispositivos vinculados → Vincular con número"
+echo "  En el celular del bot:"
+echo "  WhatsApp → ⋮ → Dispositivos vinculados → Vincular un dispositivo"
+echo "  → Escanea el QR que aparece abajo"
+echo ""
+echo "  Cuando diga: ✅ Logueo Exitoso  →  Ctrl+C"
+echo "  Luego:  pm2 start index.js --name bot-ventas && pm2 save"
 echo ""
 exec ./start.sh

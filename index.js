@@ -1680,7 +1680,6 @@ const client = new Client(clientOptions);
 // ==========================================
 
 client.on('qr', (qr) => {
-    if (USE_PAIRING_CODE) return;
     console.log('\n====================================');
     console.log('🤖 ESCANEA EL CÓDIGO QR PARA ENTRAR 🤖');
     console.log('(Expira en ~20s — si falla, espera el nuevo QR)');
@@ -1710,15 +1709,21 @@ client.on('change_state', (state) => {
 });
 
 client.on('loading_screen', (percent, message) => {
-    if (percent === 0 || percent === 100 || percent % 25 === 0) {
-        console.log(`⏳ Cargando WhatsApp Web: ${percent}% (${message || 'WhatsApp'})`);
-    }
+    console.log(`⏳ Cargando WhatsApp Web: ${percent}% (${message || 'WhatsApp'})`);
 });
 
 client.on('auth_failure', (msg) => {
     console.error('❌ Fallo de autenticación:', msg);
-    console.log('💡 Borra la carpeta .wwebjs_auth y vuelve a escanear el QR.');
+    console.log('💡 Sesión muerta. En el VPS: pm2 stop bot-ventas && ./deploy/vincular.sh');
 });
+
+// Watchdog: si en 90s no hay progreso visible, avisar (sesión a medias)
+setTimeout(() => {
+    if (!botReady) {
+        console.warn('⚠️ Lleva ~90s sin llegar a listo.');
+        console.warn('   Si se queda congelado: pm2 stop bot-ventas && ./deploy/vincular.sh');
+    }
+}, 90000).unref();
 
 let botReady = false;
 let reconnectAttempts = 0;
