@@ -735,10 +735,11 @@ async function activateStoreInGroup(msg, chat, senderNumber) {
 async function getSenderNumber(msg) {
     try {
         const sender = await msg.getContact();
-        return sender.id.user || '';
-    } catch (e) {
-        return '';
-    }
+        if (sender.id.user) return sender.id.user;
+    } catch (e) {}
+    // Fallback: extraer número de msg.author o msg.from
+    const raw = msg.author || msg.from || '';
+    return raw.split('@')[0] || '';
 }
 
 async function replyStyledMenu(command, msg, chat, isGroup) {
@@ -1329,14 +1330,13 @@ async function checkIsAdmin(msg, chat, isGroup, senderNumber) {
     if (!isGroup) return false;
     let isAdmin = false;
     try {
-        const sender = await msg.getContact();
-        const sLast10 = sender.id.user.slice(-10);
         const authorId = msg.author || msg.from;
+        const sLast10 = (senderNumber || authorId?.split('@')[0] || '').slice(-10);
         const participant = findParticipantByIdOrPhone(chat.participants, authorId, sLast10);
         if (participant && (participant.isAdmin || participant.isSuperAdmin)) {
             isAdmin = true;
         }
-        if (senderNumber.includes(ADMIN_PRIVILEGIADO)) {
+        if (senderNumber && senderNumber.includes(ADMIN_PRIVILEGIADO)) {
             isAdmin = true;
         }
     } catch (e) {}
@@ -2142,25 +2142,8 @@ client.on('message_create', async msg => {
 
         if (isGroup) {
             try {
-                const sLast10 = senderNumber.slice(-10);
                 const authorId = msg.author || msg.from;
-
-                // === DEBUG ADMIN — borrar después de confirmar fix ===
-                if (command === '.ping' || command === '.activarbot') {
-                    console.log('🔍 [DEBUG-ADMIN] senderNumber:', senderNumber, '| sLast10:', sLast10);
-                    console.log('🔍 [DEBUG-ADMIN] authorId:', authorId);
-                    console.log('🔍 [DEBUG-ADMIN] chat.participants count:', chat.participants?.length || 0);
-                    if (chat.participants && chat.participants.length > 0) {
-                        chat.participants.slice(0, 5).forEach((p, i) => {
-                            console.log(`🔍 [DEBUG-ADMIN] participant[${i}]:`, JSON.stringify({
-                                id: p.id,
-                                isAdmin: p.isAdmin,
-                                isSuperAdmin: p.isSuperAdmin
-                            }));
-                        });
-                    }
-                }
-                // === FIN DEBUG ===
+                const sLast10 = (senderNumber || authorId?.split('@')[0] || '').slice(-10);
 
                 const participant = findParticipantByIdOrPhone(chat.participants, authorId, sLast10);
                 if (participant && (participant.isAdmin || participant.isSuperAdmin)) {
@@ -2176,7 +2159,7 @@ client.on('message_create', async msg => {
                     }
                 }
 
-                if (senderNumber.includes(ADMIN_PRIVILEGIADO)) {
+                if (senderNumber && senderNumber.includes(ADMIN_PRIVILEGIADO)) {
                     isAdmin = true;
                 }
             } catch (e) {
