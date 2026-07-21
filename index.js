@@ -57,7 +57,10 @@ const approvalQueue = require('./lib/approval-queue');
 const {
     getNormalizedParticipants,
     findParticipantFresh,
-    participantIsAdmin
+    participantIsAdmin,
+    resolveIsGroupAdmin,
+    fetchGroupNameFromBrowser,
+    isUserAdminInGroup
 } = require('./lib/group-participants');
 const { getRandomFarewell } = require('./lib/welcome-texts');
 
@@ -1241,16 +1244,9 @@ async function findGroupParticipant(chat, userId, extraCandidates = []) {
 
 async function resolveGroupAdmin(msg, chat) {
     try {
-        const authorId = msg.author || msg.from;
         const senderNumber = await getSenderNumber(msg);
         if (isPrivilegedOwner(senderNumber)) return true;
-
-        const { participant } = await findParticipantFresh(client, chat, authorId, [
-            senderNumber,
-            senderNumber ? String(senderNumber).slice(-10) : null,
-            authorId
-        ]);
-        return participantIsAdmin(participant);
+        return await resolveIsGroupAdmin(client, chat, msg, senderNumber);
     } catch (e) {
         console.error('resolveGroupAdmin:', e.message);
         return false;
@@ -1263,11 +1259,13 @@ async function isChatBotAdmin(chat) {
         const botLid = client.info?.lid?._serialized;
         const botNumber = client.info?.wid?.user;
         if (!botWid && !botNumber && !botLid) return false;
+        const ids = [botWid, botLid, botNumber, botNumber ? `${botNumber}@c.us` : null].filter(Boolean);
+        if (await isUserAdminInGroup(client, chat?.id?._serialized, ids)) return true;
         const { participant } = await findParticipantFresh(
             client,
             chat,
             botWid || botLid || `${botNumber}@c.us`,
-            [botWid, botLid, botNumber, botNumber ? botNumber.slice(-10) : null]
+            ids
         );
         return participantIsAdmin(participant);
     } catch (e) {
@@ -1278,6 +1276,26 @@ async function isChatBotAdmin(chat) {
 /** Lista fresca de participantes (para .admins, .n menciones, etc.) */
 async function getFreshParticipants(chat) {
     return getNormalizedParticipants(client, chat);
+}
+
+/** Nombre real del grupo (nunca devolver "Chat" si se puede evitar) */
+async function resolveGroupDisplayName(chat) {
+    const current = (chat?.name || '').trim();
+    if (current && current !== 'Chat' && current !== 'Grupo') return current;
+    const groupId = chat?.id?._serialized;
+    const fromBrowser = await fetchGroupNameFromBrowser(client, groupId);
+    if (fromBrowser) {
+        try { chat.name = fromBrowser; } catch (e) {}
+        return fromBrowser;
+    }
+    try {
+        const fresh = await client.getChatById(groupId);
+        if (fresh?.name && fresh.name !== 'Chat') {
+            try { chat.name = fresh.name; } catch (e) {}
+            return fresh.name;
+        }
+    } catch (e) {}
+    return current || 'Grupo';
 }
 
 async function requireBotAdmin(msg, isGroup, isBotAdmin) {
@@ -1748,12 +1766,17 @@ async function getChatSafe(msgOrNotification) {
         } catch (e2) {}
     }
 
-    // Intento 3: fallback mínimo para no crashear
+    // Intento 3: fallback mínimo — intentar al menos el nombre real del grupo
     console.warn('⚠️ getChatSafe: no se pudo obtener chat real para', remoteId);
+    let fallbackName = 'Grupo';
+    if (remoteId.endsWith('@g.us')) {
+        const n = await fetchGroupNameFromBrowser(client, remoteId);
+        if (n) fallbackName = n;
+    }
     return {
         id: { _serialized: remoteId },
         isGroup: remoteId.endsWith('@g.us'),
-        name: 'Chat',
+        name: fallbackName,
         sendMessage: (content, options) => client.sendMessage(remoteId, content, options),
         participants: [],
         isReadOnly: false,
@@ -2273,11 +2296,12 @@ client.on('message_create', async msg => {
             }
 
             const freshParts = await getFreshParticipants(chat);
+            const groupName = await resolveGroupDisplayName(chat);
             const mentions = [...new Set([
                 ...freshParts.map(p => p.pn || p._serialized || p.id?._serialized).filter(Boolean),
                 ...quotedMentions
             ])];
-            const finalMessage = textToSend + getBotBrandFooter(chat.name);
+            const finalMessage = textToSend + getBotBrandFooter(groupName);
             
             if (isMediaMessage && mediaToSend) {
                 await chat.sendMessage(mediaToSend, { caption: finalMessage, mentions });
@@ -2293,12 +2317,13 @@ client.on('message_create', async msg => {
             // Siempre re-extraer staff fresco del grupo
             const freshParts = await getFreshParticipants(chat);
             const staff = freshParts.filter(p => participantIsAdmin(p));
+            const groupName = await resolveGroupDisplayName(chat);
 
             let txt = `╔═════════════════════╗
 ║ 🛡️ STAFF DEL GRUPO  ║
 ╚═════════════════════╝
 
-📌 *${chat.name}*
+📌 *${groupName}*
 👥 Admins: ${staff.length}
 ━━━━━━━━━━━━━━━━━━\n`;
 
