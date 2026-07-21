@@ -54,6 +54,11 @@ const storeWizard = require('./lib/store-load-wizard');
 const groupCommands = require('./lib/group-commands');
 const { resolveMenuImageB64 } = require('./lib/menu-sticker');
 const approvalQueue = require('./lib/approval-queue');
+const {
+    getNormalizedParticipants,
+    findParticipantFresh,
+    participantIsAdmin
+} = require('./lib/group-participants');
 const { getRandomFarewell } = require('./lib/welcome-texts');
 
 loadEnv();
@@ -755,19 +760,16 @@ async function getSenderNumber(msg) {
 async function isPhoneInChat(chat, phoneDigits) {
     const last10 = String(phoneDigits || '').replace(/\D/g, '').slice(-10);
     if (!last10) return false;
-    const group = await ensureGroupParticipants(chat);
-    if (!group?.participants?.length) return false;
-    // Match directo por últimos 10 dígitos
-    if (findParticipantByCandidates(group.participants, [last10, phoneDigits])) return true;
-    // Con LID: resolver cada admin no sirve; intentar mapear el teléfono del dueño a LID
+    const list = await getFreshParticipants(chat);
+    if (!list.length) return false;
+    if (findParticipantByCandidates(list, [last10, phoneDigits])) return true;
     try {
         const candidates = [`${last10}@c.us`];
-        if (String(phoneDigits).replace(/\D/g, '').length > 10) {
-            candidates.unshift(`${String(phoneDigits).replace(/\D/g, '')}@c.us`);
-        }
+        const full = String(phoneDigits || '').replace(/\D/g, '');
+        if (full.length > 10) candidates.unshift(`${full}@c.us`);
         for (const cand of candidates) {
-            const ids = await resolveLidAndPhoneIds(cand);
-            if (findParticipantByCandidates(group.participants, ids)) return true;
+            const { participant } = await findParticipantFresh(client, chat, cand, [last10, full]);
+            if (participant) return true;
         }
     } catch (e) {}
     return false;
@@ -1204,14 +1206,7 @@ function getWarnsForUser(groupId, userId) {
 
 const INACTIVE_GROUP_COMMANDS = new Set(['.activarbot', '.desactivarbot', '.solicitartienda']);
 
-function participantIdKeys(p) {
-    if (!p?.id) return [];
-    const keys = [];
-    if (p.id._serialized) keys.push(String(p.id._serialized));
-    if (p.id.user) keys.push(String(p.id.user));
-    return keys;
-}
-
+/** Compat: búsqueda vieja sobre un array ya cargado */
 function findParticipantByCandidates(participants, candidates) {
     if (!participants?.length || !candidates?.length) return null;
     const set = new Set(
@@ -1223,88 +1218,25 @@ function findParticipantByCandidates(participants, candidates) {
             })
     );
     for (const p of participants) {
-        for (const key of participantIdKeys(p)) {
-            if (set.has(key)) return p;
-            const digits = key.replace(/\D/g, '').slice(-10);
+        const keys = [p.id?._serialized, p.id?.user, p._serialized, p.pn, p.lid].filter(Boolean);
+        for (const key of keys) {
+            if (set.has(String(key)) || set.has(String(key).split('@')[0])) return p;
+            const digits = String(key).replace(/\D/g, '').slice(-10);
             if (digits && set.has(digits)) return p;
         }
     }
     return null;
 }
 
-/** @deprecated usar findParticipantByCandidates — se mantiene por compatibilidad */
 function findParticipantByIdOrPhone(participants, serializedId, phoneLast10) {
     return findParticipantByCandidates(participants, [serializedId, phoneLast10]);
 }
 
 /**
- * WhatsApp ahora usa @lid además de @c.us. msg.author puede ser LID
- * mientras participants tiene el teléfono (o al revés). Resolvemos ambos.
+ * SIEMPRE re-extrae participantes frescos de WhatsApp Web (LID + teléfono + isAdmin).
  */
-async function resolveLidAndPhoneIds(userId) {
-    const ids = new Set();
-    if (!userId) return [];
-    ids.add(String(userId));
-    ids.add(String(userId).split('@')[0]);
-    try {
-        const pairs = await client.getContactLidAndPhone([userId]);
-        const pair = Array.isArray(pairs) ? pairs[0] : pairs;
-        if (pair?.lid) {
-            ids.add(pair.lid);
-            ids.add(String(pair.lid).split('@')[0]);
-        }
-        if (pair?.pn) {
-            ids.add(pair.pn);
-            ids.add(String(pair.pn).split('@')[0]);
-            ids.add(String(pair.pn).replace(/\D/g, '').slice(-10));
-        }
-    } catch (e) {}
-    try {
-        const contact = await client.getContactById(userId);
-        if (contact?.id?._serialized) ids.add(contact.id._serialized);
-        if (contact?.id?.user) ids.add(contact.id.user);
-        if (contact?.number) {
-            ids.add(contact.number);
-            ids.add(String(contact.number).replace(/\D/g, '').slice(-10));
-        }
-    } catch (e) {}
-    return [...ids].filter(Boolean);
-}
-
-async function ensureGroupParticipants(chat) {
-    if (!chat?.isGroup) return chat;
-    if (chat.participants?.length) return chat;
-    try {
-        const fresh = await client.getChatById(chat.id._serialized);
-        if (fresh?.participants?.length) return fresh;
-    } catch (e) {}
-    return chat;
-}
-
 async function findGroupParticipant(chat, userId, extraCandidates = []) {
-    let group = await ensureGroupParticipants(chat);
-    const candidates = [
-        ...(await resolveLidAndPhoneIds(userId)),
-        ...extraCandidates
-    ];
-    let participant = findParticipantByCandidates(group.participants, candidates);
-
-    // Si no aparece, refrescar metadata del grupo (LID / cache vieja)
-    if (!participant && group?.id?._serialized) {
-        try {
-            const fresh = await client.getChatById(group.id._serialized);
-            if (fresh?.participants?.length) {
-                group = fresh;
-                participant = findParticipantByCandidates(fresh.participants, candidates);
-            }
-        } catch (e) {}
-    }
-
-    return { chat: group, participant };
-}
-
-function participantIsAdmin(p) {
-    return !!(p && (p.isAdmin || p.isSuperAdmin));
+    return findParticipantFresh(client, chat, userId, extraCandidates);
 }
 
 async function resolveGroupAdmin(msg, chat) {
@@ -1313,26 +1245,12 @@ async function resolveGroupAdmin(msg, chat) {
         const senderNumber = await getSenderNumber(msg);
         if (isPrivilegedOwner(senderNumber)) return true;
 
-        const { participant } = await findGroupParticipant(chat, authorId, [
+        const { participant } = await findParticipantFresh(client, chat, authorId, [
             senderNumber,
             senderNumber ? String(senderNumber).slice(-10) : null,
             authorId
         ]);
-        if (participantIsAdmin(participant)) return true;
-
-        // Último recurso: algunos grupos solo marcan admin en groupMetadata crudo
-        try {
-            const group = await ensureGroupParticipants(chat);
-            const metaParts = group.groupMetadata?.participants || [];
-            const found = findParticipantByCandidates(metaParts, [
-                authorId,
-                senderNumber,
-                senderNumber ? String(senderNumber).slice(-10) : null,
-                ...(await resolveLidAndPhoneIds(authorId))
-            ]);
-            return participantIsAdmin(found);
-        } catch (e) {}
-        return false;
+        return participantIsAdmin(participant);
     } catch (e) {
         console.error('resolveGroupAdmin:', e.message);
         return false;
@@ -1342,16 +1260,24 @@ async function resolveGroupAdmin(msg, chat) {
 async function isChatBotAdmin(chat) {
     try {
         const botWid = client.info?.wid?._serialized;
+        const botLid = client.info?.lid?._serialized;
         const botNumber = client.info?.wid?.user;
-        if (!botWid && !botNumber) return false;
-        const { participant } = await findGroupParticipant(chat, botWid || `${botNumber}@c.us`, [
-            botNumber,
-            botNumber ? botNumber.slice(-10) : null
-        ]);
+        if (!botWid && !botNumber && !botLid) return false;
+        const { participant } = await findParticipantFresh(
+            client,
+            chat,
+            botWid || botLid || `${botNumber}@c.us`,
+            [botWid, botLid, botNumber, botNumber ? botNumber.slice(-10) : null]
+        );
         return participantIsAdmin(participant);
     } catch (e) {
         return false;
     }
+}
+
+/** Lista fresca de participantes (para .admins, .n menciones, etc.) */
+async function getFreshParticipants(chat) {
+    return getNormalizedParticipants(client, chat);
 }
 
 async function requireBotAdmin(msg, isGroup, isBotAdmin) {
@@ -2346,8 +2272,9 @@ client.on('message_create', async msg => {
                 textToSend = "(Mensaje del sistema)";
             }
 
+            const freshParts = await getFreshParticipants(chat);
             const mentions = [...new Set([
-                ...chat.participants.map(p => p.id._serialized),
+                ...freshParts.map(p => p.pn || p._serialized || p.id?._serialized).filter(Boolean),
                 ...quotedMentions
             ])];
             const finalMessage = textToSend + getBotBrandFooter(chat.name);
@@ -2362,27 +2289,31 @@ client.on('message_create', async msg => {
 
         if (command === '.admins') {
             if (!isGroup) return msg.reply("❌ Comando de grupos.");
-            
-            // Recrear captura 2 (Staff del Grupo)
-            const staff = chat.participants.filter(p => p.isAdmin || p.isSuperAdmin);
-            
+
+            // Siempre re-extraer staff fresco del grupo
+            const freshParts = await getFreshParticipants(chat);
+            const staff = freshParts.filter(p => participantIsAdmin(p));
+
             let txt = `╔═════════════════════╗
 ║ 🛡️ STAFF DEL GRUPO  ║
 ╚═════════════════════╝
 
-📌 *${chat.name}* c/v
+📌 *${chat.name}*
 👥 Admins: ${staff.length}
 ━━━━━━━━━━━━━━━━━━\n`;
-            
+
             let mentions = [];
             staff.forEach((admin, i) => {
-                let tel = admin.id._serialized;
-                let isOwner = admin.isSuperAdmin ? "👑 Creador" : "🛡️ Admin";
-                txt += `| 0${i+1}. @${tel.split('@')[0]} — ${isOwner}\n`;
-                mentions.push(tel);
+                const tel = admin.pn || admin._serialized || admin.id?._serialized || '';
+                const isOwner = admin.isSuperAdmin ? "👑 Creador" : "🛡️ Admin";
+                txt += `| 0${i + 1}. @${String(tel).split('@')[0]} — ${isOwner}\n`;
+                if (tel) mentions.push(tel);
             });
+            if (!staff.length) {
+                txt += `| _(No se detectaron admins — el bot reintentó lectura fresca)_\n`;
+            }
             txt += `━━━━━━━━━━━━━━━━━━\n| 📢 ${msg._data.notifyName || "Admin"} los está llamando`;
-            
+
             await chat.sendMessage(txt, { mentions });
             return;
         }
@@ -3287,9 +3218,10 @@ client.on('message_create', async msg => {
                 candidates = [quoted.author || quoted.from];
             } else {
                 const botNum = client.info?.wid?.user?.slice(-10) || '';
-                candidates = chat.participants
-                    .filter(p => p.id && !(p.id.user || p.id._serialized || '').includes(botNum))
-                    .map(p => p.id._serialized);
+                const freshParts = await getFreshParticipants(chat);
+                candidates = freshParts
+                    .map(p => p.pn || p._serialized || p.id?._serialized)
+                    .filter(id => id && !(String(id).includes(botNum)));
             }
 
             if (candidates.length === 0) return msg.reply("⚠️ No hay participantes para el sorteo.");
